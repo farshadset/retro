@@ -1,5 +1,5 @@
-import { ChessRoom } from '@/components/chess/chess-room'
+import { HomeShell } from '@/components/home/home-shell'
 
 export default function HomePage() {
-  return <ChessRoom />
+  return <HomeShell />
 }
