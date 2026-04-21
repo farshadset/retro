@@ -1,170 +1,70 @@
-# منوی دیجیتال RETRO
+# Realtime Chess Arena
 
-یک برنامه منوی دیجیتال پیشرفته برای کافه RETRO که با Next.js، React و Tailwind CSS ساخته شده است. دارای رابط کاربری مدرن و زیبا با انیمیشن‌های نرم و عملکرد بهینه است.
+A high-performance full-stack real-time chess web app built with Next.js 14, TypeScript, and `chess.js`, inspired by modern experiences like chess.com.
 
-## ویژگی‌ها
+## Features
 
-- **رابط کاربری لوکس**: طراحی مدرن و زیبا با انیمیشن‌های نرم
-- **طراحی واکنش‌گرا**: بهینه‌سازی شده برای تمام اندازه‌های دستگاه
-- **عملکرد بهینه**: استفاده از React.useMemo برای رندر کارآمد
-- **دسترسی‌پذیری**: HTML معنایی مناسب و ناوبری صفحه کلید
-- **سیستم طراحی**: پالت رنگی و معماری کامپوننت یکپارچه
-- **ناوبری همگام‌سازی شده**: منوی ناوبری به طور خودکار با اسکرول همگام می‌شود
+- Realtime room-based multiplayer using Server-Sent Events (SSE)
+- Create / join game rooms with shareable links
+- Fully legal move validation and game-state engine (checkmate, draw, timeout, resignation)
+- Built-in chess clocks with configurable base time + increment
+- Live move list, last-move highlight, and player status panels
+- Responsive board UX with clean dark theme
+- Spectator support when both player slots are occupied
 
-## ناوبری همگام‌سازی شده
+## Tech Stack
 
-### ویژگی‌های کلیدی
-- **تشخیص خودکار بخش**: منوی ناوبری به طور خودکار بخش فعال را تشخیص می‌دهد
-- **اسکرول نرم**: حرکت نرم بین بخش‌های مختلف منو
-- **مرکزیت خودکار**: دکمه فعال به طور خودکار در مرکز نوار ناوبری قرار می‌گیرد
-- **عملکرد بهینه**: استفاده از Intersection Observer برای تشخیص دقیق
-- **تجربه کاربری یکپارچه**: همگام‌سازی کامل بین محتوا و ناوبری
+- **Frontend**: Next.js App Router, React 18, TypeScript, Tailwind CSS
+- **Backend**: Next.js Route Handlers (`/api/chess/...`)
+- **Game Engine**: `chess.js`
+- **Realtime Transport**: SSE (`text/event-stream`)
 
-### نحوه کارکرد
-1. **اسکرول خودکار**: هنگام اسکرول در منو، بخش فعال به طور خودکار تشخیص داده می‌شود
-2. **نشانگر فعال**: دکمه مربوط به بخش فعال برجسته می‌شود
-3. **مرکزیت خودکار**: دکمه فعال به طور خودکار در مرکز نوار ناوبری قرار می‌گیرد
-4. **کلیک مستقیم**: کلیک روی هر دکمه ناوبری مستقیماً به بخش مربوطه می‌رود
+## Getting Started
 
-## فناوری‌های استفاده شده
+### Prerequisites
 
-- **فرانت‌اند**: Next.js 14، React 18، TypeScript
-- **استایل‌دهی**: Tailwind CSS با سیستم طراحی سفارشی
-- **کامپوننت‌ها**: الگوی ShadCN UI با انواع سفارشی
-- **انیمیشن‌ها**: میکرو-انیمیشن‌های مبتنی بر CSS
-- **تصاویر**: بهینه‌سازی تصویر Next.js
-- **ناوبری**: Intersection Observer API برای تشخیص بخش‌های فعال
-
-## سیستم طراحی
-
-### پالت رنگی
-- **پس‌زمینه**: بژ-طلایی گرم (#F0E6D2)
-- **رنگ اصلی**: قرمز غنی (#C8102E)
-- **متن**: مشکی مات (#1A1A1A)
-- **تاکید**: طلای درخشان (#D4AF37)
-- **حاشیه‌ها**: نقره‌ای ظریف (#B0B0B0)
-
-### تایپوگرافی
-- **فونت**: Vazir (فونت فارسی)
-- **عنوان‌ها**: ضخیم، مقیاس بزرگ برای سلسله مراتب
-- **متن**: خوانا، وزن متوسط برای محتوا
-
-## شروع کار
-
-### پیش‌نیازها
 - Node.js 18+
-- npm یا yarn
+- npm
 
-### نصب
+### Install
 
-1. کلون کردن مخزن:
-```bash
-git clone <repository-url>
-cd retro-digital-menu
-```
-
-2. نصب وابستگی‌ها:
 ```bash
 npm install
 ```
 
-3. اجرای سرور توسعه:
+### Run in development
+
 ```bash
 npm run dev
 ```
 
-4. باز کردن [http://localhost:3000](http://localhost:3000) در مرورگر.
+Open `http://localhost:3000`.
 
-### ساخت برای تولید
+### Production build
 
 ```bash
 npm run build
 npm start
 ```
 
-## ساختار پروژه
+## API Surface
 
-```
+- `POST /api/chess/rooms` — create room
+- `GET /api/chess/rooms/:roomId` — get latest snapshot
+- `POST /api/chess/rooms/:roomId/join` — join as player or spectator
+- `POST /api/chess/rooms/:roomId/move` — submit move
+- `POST /api/chess/rooms/:roomId/resign` — resign game
+- `GET /api/chess/rooms/:roomId/events` — subscribe to realtime events (SSE)
+
+## Project Structure
+
+```text
 src/
-├── app/                 # دایرکتوری Next.js app
-│   ├── globals.css     # استایل‌های جهانی و متغیرهای CSS
-│   ├── layout.tsx      # کامپوننت layout اصلی
-│   └── page.tsx        # کامپوننت صفحه اصلی
-├── components/         # کامپوننت‌های قابل استفاده مجدد
-│   ├── ui/            # کامپوننت‌های پایه UI
-│   └── menu/          # کامپوننت‌های مخصوص منو
-├── hooks/              # Hook های سفارشی
-│   └── useScrollSync.ts # Hook همگام‌سازی اسکرول
-├── data/              # داده‌های نمونه
-├── lib/               # توابع کمکی
-└── types/             # تعاریف TypeScript
+├── app/
+│   ├── api/chess/rooms/**      # Realtime chess API routes
+│   ├── globals.css
+│   ├── layout.tsx
+│   └── page.tsx
+├── components/chess/           # Lobby + board + game UI
+└── lib/chess/                  # Room store, types, client API, helpers
 ```
-
-## معماری کامپوننت
-
-### کامپوننت‌های اصلی
-- **Button**: دکمه مبتنی بر نوع با چندین استایل
-- **Card**: کامپوننت کارت انعطاف‌پذیر برای آیتم‌های منو
-- **Badge**: برچسب‌های کوچک برای آلرژن‌ها و اطلاعات تغذیه
-
-### کامپوننت‌های منو
-- **CategoryNav**: ناوبری افقی با اسکرول نرم و همگام‌سازی خودکار
-- **MenuCard**: نمایش آیتم منوی فردی با انیمیشن‌های hover
-- **MenuSection**: گروه‌بندی دسته‌بندی با انیمیشن‌های تدریجی
-
-### Hook های سفارشی
-- **useScrollSync**: همگام‌سازی اسکرول با ناوبری و تشخیص بخش فعال
-
-## ویژگی‌های عملکرد
-
-- **بهینه‌سازی حافظه**: جلوگیری از محاسبات غیرضروری
-- **مدیریت state**: useState کارآمد برای دسته‌بندی فعال
-- **بهینه‌سازی تصویر**: کامپوننت Image Next.js با اندازه‌گیری مناسب
-- **انیمیشن‌های CSS**: انتقال‌های شتاب‌دار سخت‌افزاری
-- **تشخیص اسکرول**: استفاده از Intersection Observer برای عملکرد بهینه
-
-## طراحی واکنش‌گرا
-
-- رویکرد موبایل-اول
-- اسکرول افقی برای ناوبری دسته‌بندی
-- طرح‌های شبکه انعطاف‌پذیر
-- تعاملات دوستانه لمسی
-- همگام‌سازی خودکار ناوبری
-
-## تست و کیفیت
-
-- TypeScript برای ایمنی نوع
-- پیکربندی ESLint
-- راه‌اندازی تست کامپوننت
-- تأیید ساخت کامل
-- عملکرد بهینه اسکرول
-
-## سرور توسعه
-
-- در حال اجرا روی `http://localhost:3000`
-- بارگذاری مجدد داغ فعال
-- ساخت تولید تأیید شده
-- بدون خطای TypeScript
-
-## مراحل بعدی
-
-1. **مشاهده برنامه**: باز کردن `http://localhost:3000` در مرورگر
-2. **تست ناوبری**: اسکرول در منو برای مشاهده همگام‌سازی خودکار
-3. **شخصی‌سازی محتوا**: ویرایش `src/data/menu-data.ts` برای آیتم‌های منوی شما
-4. **تغییر استایل**: به‌روزرسانی متغیرهای CSS در `src/app/globals.css`
-5. **افزودن ویژگی‌ها**: گسترش کامپوننت‌ها در صورت نیاز
-
-## پشتیبانی مرورگر
-
-- Chrome 90+
-- Firefox 88+
-- Safari 14+
-- Edge 90+
-
-## مجوز
-
-این پروژه اختصاصی کافه RETRO است.
-
-## مشارکت
-
-این یک پروژه خصوصی است. لطفاً برای هرگونه سؤال یا پیشنهاد با تیم توسعه تماس بگیرید.

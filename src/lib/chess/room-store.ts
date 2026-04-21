@@ -88,20 +88,20 @@ export class RoomStore {
 
   private cleanupExpiredRooms(): void {
     const now = Date.now()
-    for (const [roomId, room] of this.rooms) {
+    this.rooms.forEach((room, roomId) => {
       const isExpired = now - room.updatedAt > ROOM_TTL_MS
       if (isExpired && room.subscribers.size === 0) {
         this.rooms.delete(roomId)
       }
-    }
+    })
     if (this.rooms.size <= MAX_ROOMS) return
-    const sortedByAge = [...this.rooms.values()].sort((a, b) => a.updatedAt - b.updatedAt)
-    for (const room of sortedByAge) {
-      if (this.rooms.size <= MAX_ROOMS) break
+    const sortedByAge = Array.from(this.rooms.values()).sort((a, b) => a.updatedAt - b.updatedAt)
+    sortedByAge.forEach((room) => {
+      if (this.rooms.size <= MAX_ROOMS) return
       if (room.subscribers.size === 0) {
         this.rooms.delete(room.id)
       }
-    }
+    })
   }
 
   private getRoomOrThrow(roomId: string): RoomState {
@@ -113,10 +113,10 @@ export class RoomStore {
     return room
   }
 
-  private applyTurnClock(room: RoomState, now: number): void {
-    if (room.status !== 'active' || room.activeSince === null) return
+  private applyTurnClock(room: RoomState, now: number): boolean {
+    if (room.status !== 'active' || room.activeSince === null) return false
     const elapsed = now - room.activeSince
-    if (elapsed <= 0) return
+    if (elapsed <= 0) return false
 
     const currentTurn = normalizeColor(room.chess.turn())
     if (currentTurn === 'white') {
@@ -127,6 +127,7 @@ export class RoomStore {
         room.winner = 'black'
         room.drawReason = null
         room.activeSince = null
+        return true
       }
     } else {
       room.blackTimeMs = clampMs(room.blackTimeMs - elapsed)
@@ -136,8 +137,10 @@ export class RoomStore {
         room.winner = 'white'
         room.drawReason = null
         room.activeSince = null
+        return true
       }
     }
+    return false
   }
 
   private snapshotFor(room: RoomState): RoomSnapshot {
@@ -155,7 +158,7 @@ export class RoomStore {
         white: room.players.white,
         black: room.players.black,
       },
-      spectatorCount: [...room.sessionsByToken.values()].filter((session) => session.color === null).length,
+      spectatorCount: Array.from(room.sessionsByToken.values()).filter((session) => session.color === null).length,
       timeControlMs: room.timeControlMs,
       incrementMs: room.incrementMs,
       whiteTimeMs: room.whiteTimeMs,
@@ -176,9 +179,9 @@ export class RoomStore {
       snapshot,
     }
     room.sequence += 1
-    for (const listener of room.subscribers) {
+    room.subscribers.forEach((listener) => {
       listener(event)
-    }
+    })
     return snapshot
   }
 
@@ -297,11 +300,10 @@ export class RoomStore {
     }
 
     const now = Date.now()
-    const beforeStatus = room.status
-    this.applyTurnClock(room, now)
+    const timedOut = this.applyTurnClock(room, now)
     room.updatedAt = now
 
-    if (beforeStatus === 'active' && room.status === 'timeout') {
+    if (timedOut) {
       return this.emit(room, 'game-over')
     }
 
@@ -330,8 +332,8 @@ export class RoomStore {
       throw new ChessApiError(409, 'GAME_NOT_ACTIVE', 'Game is not active.')
     }
 
-    this.evaluateClock(room.id)
-    if (room.status === 'timeout') {
+    const clockSnapshot = this.evaluateClock(room.id)
+    if (clockSnapshot.status === 'timeout') {
       throw new ChessApiError(409, 'TIMEOUT', 'Current player lost on time.')
     }
 
