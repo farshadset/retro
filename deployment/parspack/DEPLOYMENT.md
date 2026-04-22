@@ -121,3 +121,24 @@ curl https://your-domain.ir/api/health
 npx pm2 logs realtime-chess-web
 npx pm2 logs realtime-chess-api
 ```
+
+## 9) One-command bootstrap (fresh Ubuntu)
+
+If you want full automated setup on a fresh server, run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/farshadset/retro/cursor/chess-realtime-app-5487/deployment/parspack/bootstrap.sh -o bootstrap.sh
+bash bootstrap.sh your-domain.ir
+```
+
+Optional env vars:
+
+```bash
+BRANCH=cursor/chess-realtime-app-5487
+APP_DIR=/opt/realtime-chess
+ENABLE_SSL=true
+CERTBOT_EMAIL=you@example.com
+bash bootstrap.sh your-domain.ir
+```
+
+The script installs Node + Go + Nginx, builds both services, runs PM2, configures Nginx, and can provision SSL.

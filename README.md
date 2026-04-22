@@ -82,5 +82,6 @@ Ready deployment artifacts:
 - `ecosystem.config.cjs`
 - `deployment/parspack/nginx-realtime-chess.conf`
 - `deployment/parspack/DEPLOYMENT.md`
+- `deployment/parspack/bootstrap.sh` (one-command Ubuntu bootstrap)
 
 For your current testing target (around 10 concurrent users), this architecture is suitable on a modest VPS.
