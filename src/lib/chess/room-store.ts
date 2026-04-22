@@ -1,6 +1,7 @@
 import { Chess, Move } from 'chess.js'
 import { randomUUID } from 'crypto'
 import { LastMove, PlayerColor, RoomPlayer, RoomSnapshot, RoomStatus } from './types'
+import { assertChessRuntimeSafety, getChessRuntimeConfig } from './runtime-config'
 
 type EventType = 'snapshot' | 'move' | 'room-created' | 'player-joined' | 'resigned' | 'game-over'
 
@@ -43,8 +44,9 @@ interface RoomState {
 }
 
 const ROOM_ID_LENGTH = 6
-const MAX_ROOMS = 500
-const ROOM_TTL_MS = 6 * 60 * 60 * 1000
+const runtimeConfig = getChessRuntimeConfig()
+const MAX_ROOMS = runtimeConfig.roomStoreMaxRooms
+const ROOM_TTL_MS = runtimeConfig.roomStoreTtlMs
 
 class ChessApiError extends Error {
   status: number
@@ -424,9 +426,17 @@ declare global {
 
 export function getRoomStore(): RoomStore {
   if (!global.__chessRoomStore) {
+    assertChessRuntimeSafety()
     global.__chessRoomStore = new RoomStore()
   }
   return global.__chessRoomStore
 }
 
 export { ChessApiError }
+
+export function describeStoreMode(): { storeMode: 'memory' | 'redis'; singleInstanceOnly: boolean } {
+  return {
+    storeMode: runtimeConfig.storeMode,
+    singleInstanceOnly: runtimeConfig.storeMode === 'memory',
+  }
+}
