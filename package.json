@@ -7,9 +7,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "go:build": "cd go-server && go build -o ../chess-api .",
+    "go:run": "cd go-server && go run .",
     "start:pm2": "pm2 start ecosystem.config.cjs --env production",
-    "restart:pm2": "pm2 reload realtime-chess --update-env",
-    "stop:pm2": "pm2 delete realtime-chess"
+    "restart:pm2": "pm2 reload realtime-chess-web realtime-chess-api --update-env",
+    "stop:pm2": "pm2 delete realtime-chess-web realtime-chess-api"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",

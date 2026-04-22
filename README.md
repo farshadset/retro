@@ -1,86 +1,71 @@
 # Realtime Chess Arena
 
-A high-performance full-stack real-time chess web app built with Next.js 14, TypeScript, and `chess.js`, inspired by modern experiences like chess.com.
+A high-performance full-stack realtime chess web app with:
+
+- **Next.js frontend** (UI and pages)
+- **Go backend** (realtime chess API + SSE)
 
 ## Features
 
 - Realtime room-based multiplayer using Server-Sent Events (SSE)
 - Create / join game rooms with shareable links
-- Fully legal move validation and game-state engine (checkmate, draw, timeout, resignation)
+- Legal move validation and game-state engine (checkmate, draw, timeout, resignation)
 - Built-in chess clocks with configurable base time + increment
 - Live move list, last-move highlight, and player status panels
 - Responsive board UX with clean dark theme
-- Spectator support when both player slots are occupied
-- Health endpoint for runtime verification (`/api/health`)
 
 ## Tech Stack
 
-- **Frontend**: Next.js App Router, React 18, TypeScript, Tailwind CSS
-- **Backend**: Next.js Route Handlers (`/api/chess/...`)
-- **Game Engine**: `chess.js`
-- **Realtime Transport**: SSE (`text/event-stream`)
-- **Process Manager**: PM2 (production single-instance mode)
-- **Reverse Proxy**: Nginx (SSE-safe proxy config)
+- **Frontend**: Next.js 14, React 18, TypeScript, Tailwind CSS
+- **Backend**: Go 1.22+ (`go-server/`) using `github.com/notnil/chess`
+- **Realtime transport**: SSE (`text/event-stream`)
+- **Process manager**: PM2 (two processes: web + api)
+- **Reverse proxy**: Nginx
 
-## Getting Started
+## Quick Start (local)
 
-### Prerequisites
-
-- Node.js 18+
-- npm
-
-### Install
+Install JS dependencies:
 
 ```bash
 npm install
 ```
 
-### Run in development
+Run frontend:
 
 ```bash
 npm run dev
 ```
 
-Open `http://localhost:3000`.
-
-### Production build
+Run Go API in another terminal:
 
 ```bash
-npm run build
-npm start
+npm run go:run
 ```
 
-## Production Runtime Mode (important)
+Frontend: `http://localhost:3000`  
+Go API: `http://localhost:4000`
 
-Current production mode is intentionally:
+## Environment
 
-- `CHESS_STORE_MODE=memory`
-- `WEB_CONCURRENCY=1`
-- PM2 `instances: 1`
-
-This guarantees consistent room state for live chess games with the current in-memory store.
-
-> Do not run multiple workers/instances in this phase.
-
-### Environment template
-
-Use:
+Copy template:
 
 ```bash
 cp .env.example .env.production.local
 ```
 
-Then keep at least:
+Important vars:
 
 ```bash
-NODE_ENV=production
 PORT=3000
-WEB_CONCURRENCY=1
+NEXT_PUBLIC_CHESS_API_BASE_URL=https://api.your-domain.ir
+
+GO_CHESS_PORT=4000
 CHESS_STORE_MODE=memory
-CHESS_ENFORCE_SINGLE_INSTANCE=true
+CHESS_ROOM_STORE_MAX_ROOMS=500
+CHESS_ROOM_STORE_TTL_MS=21600000
 ```
 
-## API Surface
+## API Surface (Go backend)
 
 - `POST /api/chess/rooms` — create room
 - `GET /api/chess/rooms/:roomId` — get latest snapshot
@@ -88,43 +73,14 @@ CHESS_ENFORCE_SINGLE_INSTANCE=true
 - `POST /api/chess/rooms/:roomId/move` — submit move
 - `POST /api/chess/rooms/:roomId/resign` — resign game
 - `GET /api/chess/rooms/:roomId/events` — subscribe to realtime events (SSE)
-- `GET /api/health` — runtime health/config status
+- `GET /api/health` — health and runtime details
 
-## Project Structure
+## Deployment (ParsPack Startup)
 
-```text
-src/
-├── app/
-│   ├── api/chess/rooms/**      # Realtime chess API routes
-│   ├── api/health/route.ts     # Runtime health endpoint
-│   ├── globals.css
-│   ├── layout.tsx
-│   └── page.tsx
-├── components/chess/           # Lobby + board + game UI
-└── lib/chess/                  # Room store, types, client API, helpers
-```
+Ready deployment artifacts:
 
-## ParsPack Startup Deployment
+- `ecosystem.config.cjs`
+- `deployment/parspack/nginx-realtime-chess.conf`
+- `deployment/parspack/DEPLOYMENT.md`
 
-Ready-to-use deployment artifacts were added:
-
-- `ecosystem.config.cjs` (PM2 single-instance config)
-- `deployment/parspack/nginx-realtime-chess.conf` (SSE-ready Nginx config)
-- `deployment/parspack/DEPLOYMENT.md` (step-by-step deploy guide)
-
-Recommended plan baseline:
-
-- 3 vCPU
-- 4GB RAM
-- Single PM2 instance
-
-## Future Scale Plan (Redis phase)
-
-The runtime config is prepared for a future Redis mode, but the room store is currently memory-based by design.
-
-When you start phase 2:
-
-1. Implement Redis-backed room/session/event storage
-2. Set `CHESS_STORE_MODE=redis`
-3. Set `REDIS_URL=...`
-4. Increase PM2 instances horizontally
+For your current testing target (around 10 concurrent users), this architecture is suitable on a modest VPS.

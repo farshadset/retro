@@ -16,6 +16,15 @@ interface SnapshotResponse {
   snapshot: RoomSnapshot
 }
 
+const API_BASE_URL = (process.env.NEXT_PUBLIC_CHESS_API_BASE_URL ?? '').trim().replace(/\/$/, '')
+
+function apiUrl(path: string): string {
+  if (!path.startsWith('/')) {
+    throw new Error('API path must start with "/".')
+  }
+  return `${API_BASE_URL}${path}`
+}
+
 async function parseApiResponse<T>(response: Response): Promise<T> {
   const payload = (await response.json()) as T & ApiErrorPayload
   if (!response.ok) {
@@ -29,7 +38,7 @@ export async function createRoom(input: {
   timeControlMinutes: number
   incrementSeconds: number
 }): Promise<SessionResponse> {
-  const response = await fetch('/api/chess/rooms', {
+  const response = await fetch(apiUrl('/api/chess/rooms'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
@@ -38,7 +47,7 @@ export async function createRoom(input: {
 }
 
 export async function joinRoom(input: { roomId: string; name: string }): Promise<SessionResponse> {
-  const response = await fetch(`/api/chess/rooms/${input.roomId}/join`, {
+  const response = await fetch(apiUrl(`/api/chess/rooms/${input.roomId}/join`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: input.name }),
@@ -47,7 +56,7 @@ export async function joinRoom(input: { roomId: string; name: string }): Promise
 }
 
 export async function fetchRoom(roomId: string): Promise<SnapshotResponse> {
-  const response = await fetch(`/api/chess/rooms/${roomId}`, {
+  const response = await fetch(apiUrl(`/api/chess/rooms/${roomId}`), {
     method: 'GET',
     cache: 'no-store',
   })
@@ -61,7 +70,7 @@ export async function makeMove(input: {
   to: string
   promotion?: 'q' | 'r' | 'b' | 'n'
 }): Promise<SnapshotResponse> {
-  const response = await fetch(`/api/chess/rooms/${input.roomId}/move`, {
+  const response = await fetch(apiUrl(`/api/chess/rooms/${input.roomId}/move`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -75,10 +84,14 @@ export async function makeMove(input: {
 }
 
 export async function resign(input: { roomId: string; token: string }): Promise<SnapshotResponse> {
-  const response = await fetch(`/api/chess/rooms/${input.roomId}/resign`, {
+  const response = await fetch(apiUrl(`/api/chess/rooms/${input.roomId}/resign`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ token: input.token }),
   })
   return parseApiResponse<SnapshotResponse>(response)
+}
+
+export function roomEventsUrl(roomId: string): string {
+  return apiUrl(`/api/chess/rooms/${roomId}/events`)
 }

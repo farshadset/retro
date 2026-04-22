@@ -15,6 +15,7 @@
 
 # production
 /build
+/chess-api
 
 # misc
 .DS_Store

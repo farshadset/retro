@@ -1,27 +1,34 @@
-# ParsPack Startup Deployment Guide (Single Instance)
+# ParsPack Deployment Guide (Next.js + Go)
 
-This guide prepares the app for **ParsPack Startup plan** with the current chess runtime architecture.
+This guide deploys:
 
-## Runtime Strategy
+- Next.js frontend on port `3000`
+- Go realtime API on port `4000`
+- Nginx reverse proxy in front
 
-- **Current store mode**: `memory`
-- **Scaling constraint**: one app instance only
-- **Reason**: game state is in-process; multiple workers/nodes would split room state
-
-If you need horizontal scale later, migrate the room store to Redis-backed shared state first, then enable multiple instances.
-
-## 1) Server bootstrap (Ubuntu)
+## 1) Server bootstrap
 
 ```bash
 sudo apt update
 sudo apt install -y nginx curl git build-essential
+
+# Node.js 20
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt install -y nodejs
+
+# Go 1.22 (skip if already installed)
+wget https://go.dev/dl/go1.22.2.linux-amd64.tar.gz
+sudo rm -rf /usr/local/go
+sudo tar -C /usr/local -xzf go1.22.2.linux-amd64.tar.gz
+echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.profile
+source ~/.profile
+
 node -v
 npm -v
+go version
 ```
 
-## 2) App install
+## 2) Clone and configure app
 
 ```bash
 git clone <REPO_URL> realtime-chess
@@ -30,39 +37,44 @@ npm install
 cp .env.example .env.production.local
 ```
 
-Edit `.env.production.local` and keep:
+Edit `.env.production.local`:
 
 ```bash
 NODE_ENV=production
 PORT=3000
-WEB_CONCURRENCY=1
+NEXT_PUBLIC_CHESS_API_BASE_URL=https://your-domain.ir
+
+GO_CHESS_PORT=4000
 CHESS_STORE_MODE=memory
-CHESS_ENFORCE_SINGLE_INSTANCE=true
 CHESS_ROOM_STORE_MAX_ROOMS=500
 CHESS_ROOM_STORE_TTL_MS=21600000
 ```
 
-## 3) Build + run with PM2 (single instance)
+## 3) Build web + Go API
 
 ```bash
 npm run build
+npm run go:build
+```
+
+This creates the Go binary in project root as `./chess-api`.
+
+## 4) Start with PM2
+
+```bash
 npx pm2 start ecosystem.config.cjs --env production
 npx pm2 save
 npx pm2 startup
 ```
 
-Health check:
+Verify:
 
 ```bash
-curl http://127.0.0.1:3000/api/health
+npx pm2 status
+curl http://127.0.0.1:4000/api/health
 ```
 
-Expected keys:
-- `ok: true`
-- `runtime.storeMode: "memory"`
-- `runtime.singleInstanceOnly: true`
-
-## 4) Nginx reverse proxy (SSE-safe)
+## 5) Configure Nginx
 
 ```bash
 sudo cp deployment/parspack/nginx-realtime-chess.conf /etc/nginx/sites-available/realtime-chess
@@ -72,46 +84,40 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-The provided config disables buffering on `/api/chess/rooms/` to keep SSE streams low-latency.
+The provided config routes:
 
-## 5) SSL (recommended)
+- `/api/*` -> Go API (`127.0.0.1:4000`)
+- all other routes -> Next.js (`127.0.0.1:3000`)
+
+and keeps SSE low latency with buffering disabled.
+
+## 6) SSL
 
 ```bash
 sudo apt install -y certbot python3-certbot-nginx
 sudo certbot --nginx -d your-domain.ir
 ```
 
-## 6) Operations
+## 7) Deploy updates
 
 ```bash
-# deploy updates
 git pull
 npm install
 npm run build
-npx pm2 reload realtime-chess --update-env
-
-# logs
-npx pm2 logs realtime-chess
-
-# status
-npx pm2 status
-curl https://your-domain.ir/api/health
+npm run go:build
+npx pm2 reload realtime-chess-web realtime-chess-api --update-env
 ```
 
-## 7) Capacity notes for Startup plan
+## 8) Useful checks
 
-Recommended Startup plan baseline:
-- 3 vCPU
-- 4GB RAM
-- single PM2 instance (`instances: 1`)
+```bash
+# frontend through nginx
+curl https://your-domain.ir
 
-This is suitable for your current target (~50 concurrent users) with current feature scope.
+# go backend through nginx
+curl https://your-domain.ir/api/health
 
-## 8) Future scale plan (phase 2)
-
-Before enabling multi-instance:
-1. Implement Redis-backed room/session/event storage
-2. Set `CHESS_STORE_MODE=redis`
-3. Set `REDIS_URL=...`
-4. Increase PM2 instances
-5. Keep sticky behavior optional (state would be shared)
+# direct process logs
+npx pm2 logs realtime-chess-web
+npx pm2 logs realtime-chess-api
+```

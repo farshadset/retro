@@ -5,7 +5,7 @@ import { Chess, Square } from 'chess.js'
 import { ChessBoard } from './chess-board'
 import { MoveList } from './move-list'
 import { PlayerPanel } from './player-panel'
-import { createRoom, fetchRoom, joinRoom, makeMove, resign } from '@/lib/chess/client'
+import { createRoom, fetchRoom, joinRoom, makeMove, resign, roomEventsUrl } from '@/lib/chess/client'
 import { PlayerColor, RoomSession, RoomSnapshot, RoomStatus } from '@/lib/chess/types'
 
 type Mode = 'lobby' | 'playing'
@@ -117,7 +117,7 @@ export function ChessRoom() {
 
   const connectEvents = useCallback((roomId: string) => {
     disconnectEvents()
-    const source = new EventSource(`/api/chess/rooms/${roomId}/events`)
+    const source = new EventSource(roomEventsUrl(roomId))
     const applySnapshot = (rawPayload: string) => {
       try {
         const nextSnapshot = JSON.parse(rawPayload) as RoomSnapshot
