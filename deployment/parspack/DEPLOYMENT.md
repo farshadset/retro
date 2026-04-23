@@ -142,3 +142,34 @@ bash bootstrap.sh your-domain.ir
 ```
 
 The script installs Node + Go + Nginx, builds both services, runs PM2, configures Nginx, and can provision SSL.
+
+## 10) Docker offline bundle (best for Iran-access VPS)
+
+If your VPS cannot pull global images/packages reliably, build everything locally and upload a ready bundle.
+
+### Build bundle on your local machine (with international internet)
+
+```bash
+bash deployment/parspack/docker-bundle.sh
+```
+
+Output:
+- `docker-dist.tar.gz`
+
+### Deploy bundle on VPS
+
+```bash
+scp docker-dist.tar.gz root@YOUR_SERVER_IP:/opt/
+ssh root@YOUR_SERVER_IP
+cd /opt
+tar -xzf docker-dist.tar.gz
+cd docker-dist
+cp .env.example .env
+# edit .env and set NEXT_PUBLIC_CHESS_API_BASE_URL=https://your-domain.ir
+bash run-on-server.sh
+```
+
+This starts 3 containers:
+- `retrochess-web` (Next.js)
+- `retrochess-api` (Go)
+- `retrochess-gateway` (Nginx on port 80)

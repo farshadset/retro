@@ -83,5 +83,23 @@ Ready deployment artifacts:
 - `deployment/parspack/nginx-realtime-chess.conf`
 - `deployment/parspack/DEPLOYMENT.md`
 - `deployment/parspack/bootstrap.sh` (one-command Ubuntu bootstrap)
+- `deployment/parspack/docker-bundle.sh` (build/export Docker offline bundle)
+- `docker-compose.yml` + `docker/*` (web/api/gateway containers)
 
 For your current testing target (around 10 concurrent users), this architecture is suitable on a modest VPS.
+
+## Docker offline bundle (for Iran-access VPS)
+
+When your server cannot access international registries, build/export Docker images on your local machine:
+
+```bash
+bash deployment/parspack/docker-bundle.sh
+```
+
+This creates `docker-dist.tar.gz`. Upload to server and run:
+
+```bash
+tar -xzf docker-dist.tar.gz
+cd docker-dist
+bash run-on-server.sh
+```
