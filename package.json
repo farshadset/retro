@@ -7,6 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
     "go:build": "cd go-server && go build -o ../chess-api .",
     "go:run": "cd go-server && go run .",
     "start:pm2": "pm2 start ecosystem.config.cjs --env production",
@@ -27,6 +29,7 @@
     "tailwind-merge": "^2.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@types/node": "^20.8.0",
     "@types/react": "^18.3.24",
     "@types/react-dom": "^18.2.0",
