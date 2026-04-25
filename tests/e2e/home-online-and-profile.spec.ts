@@ -52,6 +52,7 @@ test.describe('Home actions and profile registration', () => {
     await secondPage.getByTestId('profile-register-btn').click()
 
     await page.getByTestId('friends-search-input').fill(userB)
+    await expect(page.getByTestId(`friends-send-request-${userB}`)).toBeVisible({ timeout: 10000 })
     await page.getByTestId(`friends-send-request-${userB}`).click()
     await expect(secondPage.getByTestId(`friends-incoming-row-${userA}`)).toBeVisible({ timeout: 10000 })
     await secondPage.getByTestId(`friends-accept-${userA}`).click()
