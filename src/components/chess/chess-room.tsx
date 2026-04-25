@@ -440,12 +440,12 @@ export function ChessRoom() {
   const roomShareUrl = `${window.location.origin}/?room=${hydratedSnapshot.roomId}`
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-950 to-slate-900 px-3 py-6 text-slate-100 sm:px-6 sm:py-8">
+    <main className="min-h-screen bg-[#1f1d1b] px-2 py-5 text-slate-100 sm:px-5 sm:py-6">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-5">
-        <header className="flex flex-col gap-3 rounded-2xl border border-slate-700 bg-slate-900/70 p-4 backdrop-blur sm:flex-row sm:items-center sm:justify-between">
+        <header className="flex flex-col gap-3 rounded-md border border-[#3a3734] bg-[#262421] p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1">
-            <p className="text-xs uppercase tracking-[0.24em] text-cyan-300">Room {hydratedSnapshot.roomId}</p>
-            <h2 className="text-xl font-black tracking-tight sm:text-2xl">{statusLabel(hydratedSnapshot.status)}</h2>
+            <p className="text-xs uppercase tracking-[0.24em] text-[#9f9a93]">Room {hydratedSnapshot.roomId}</p>
+            <h2 className="text-xl font-black tracking-tight text-[#f3efe8] sm:text-2xl">{statusLabel(hydratedSnapshot.status)}</h2>
             {hydratedSnapshot.status !== 'active' && hydratedSnapshot.status !== 'waiting' ? (
               <p className="text-sm text-amber-200">{gameResultText(hydratedSnapshot)}</p>
             ) : null}
@@ -460,14 +460,14 @@ export function ChessRoom() {
                   setError('Could not copy room link.')
                 }
               }}
-              className="rounded-lg border border-cyan-400/40 px-3 py-2 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-400/15"
+              className="rounded-md border border-[#57524c] bg-[#34312e] px-3 py-2 text-xs font-semibold text-[#e6e2da] transition hover:bg-[#3f3b38]"
             >
               Copy room link
             </button>
             <button
               type="button"
               onClick={leaveGame}
-              className="rounded-lg border border-slate-600 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-slate-800"
+              className="rounded-md border border-[#57524c] bg-[#34312e] px-3 py-2 text-xs font-semibold text-[#e6e2da] transition hover:bg-[#3f3b38]"
             >
               Leave room
             </button>
@@ -475,7 +475,7 @@ export function ChessRoom() {
               type="button"
               disabled={!session.color || hydratedSnapshot.status !== 'active' || isSubmitting}
               onClick={handleResign}
-              className="rounded-lg border border-red-500/50 px-3 py-2 text-xs font-semibold text-red-200 transition hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-md border border-red-500/40 bg-[#3a2b2b] px-3 py-2 text-xs font-semibold text-red-200 transition hover:bg-[#4b3333] disabled:cursor-not-allowed disabled:opacity-60"
             >
               Resign
             </button>
@@ -494,7 +494,7 @@ export function ChessRoom() {
               highlightedMoves={moveTargets}
               onSquareClick={handleSquareClick}
             />
-            <p className="text-sm text-slate-300">
+            <p className="text-sm text-[#bfb9b1]">
               {session.color
                 ? isPlayerTurn
                   ? isMakingMove
@@ -509,11 +509,11 @@ export function ChessRoom() {
 
           <aside className="flex flex-col gap-4">
             <MoveList moves={hydratedSnapshot.moves} />
-            <section className="rounded-xl border border-slate-700 bg-slate-900/70 p-4 text-sm text-slate-300">
-              <h3 className="mb-2 text-sm font-bold uppercase tracking-wide text-slate-100">Players</h3>
+            <section className="rounded-md border border-[#3a3734] bg-[#262421] p-4 text-sm text-[#cbc7c2]">
+              <h3 className="mb-2 text-sm font-bold uppercase tracking-wide text-[#f3efe8]">Players</h3>
               <p>White: {hydratedSnapshot.players.white?.name ?? 'Waiting...'}</p>
               <p>Black: {hydratedSnapshot.players.black?.name ?? 'Waiting...'}</p>
-              <p className="mt-2 text-xs text-slate-400">Spectators: {hydratedSnapshot.spectatorCount}</p>
+              <p className="mt-2 text-xs text-[#9f9a93]">Spectators: {hydratedSnapshot.spectatorCount}</p>
             </section>
           </aside>
         </section>

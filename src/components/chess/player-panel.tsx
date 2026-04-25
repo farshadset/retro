@@ -29,31 +29,39 @@ export function PlayerPanel({ snapshot, perspective }: PlayerPanelProps) {
   const activeTurnColor = snapshot.turn
 
   return (
-    <div className="flex w-full max-w-[min(92vw,680px)] flex-col gap-3">
+    <div className="flex w-full max-w-[min(96vw,680px)] flex-col gap-3">
       <section
         className={[
-          'flex items-center justify-between rounded-xl border px-4 py-3',
-          activeTurnColor === rivalColor ? 'border-emerald-400/80 bg-emerald-500/10' : 'border-slate-700 bg-slate-900/75',
+          'flex items-center justify-between rounded-md border px-4 py-3',
+          activeTurnColor === rivalColor
+            ? 'border-[#6c8d38] bg-[#2a2a29]'
+            : 'border-[#3a3734] bg-[#2a2826]',
         ].join(' ')}
       >
-        <div className="flex items-center gap-2 text-sm text-slate-300">
-          <span className="inline-flex h-2.5 w-2.5 rounded-full bg-slate-400" />
+        <div className="flex items-center gap-2 text-sm text-[#cbc7c2]">
+          <span className="inline-flex h-2.5 w-2.5 rounded-full bg-[#9f9a93]" />
           <NameSlot player={rival} fallback="Waiting for opponent..." />
         </div>
-        <span className="text-lg font-bold tabular-nums text-slate-100">{formatTimer(rivalTime)}</span>
+        <span className="rounded-md bg-[#3a3937] px-4 py-1.5 text-xl font-bold tabular-nums text-[#f0ede6]">
+          {formatTimer(rivalTime)}
+        </span>
       </section>
 
       <section
         className={[
-          'flex items-center justify-between rounded-xl border px-4 py-3',
-          activeTurnColor === myColor ? 'border-cyan-400/90 bg-cyan-500/10' : 'border-slate-700 bg-slate-900/75',
+          'flex items-center justify-between rounded-md border px-4 py-3',
+          activeTurnColor === myColor
+            ? 'border-[#6c8d38] bg-[#2a2a29]'
+            : 'border-[#3a3734] bg-[#2a2826]',
         ].join(' ')}
       >
-        <div className="flex items-center gap-2 text-sm text-slate-300">
-          <span className="inline-flex h-2.5 w-2.5 rounded-full bg-cyan-300" />
+        <div className="flex items-center gap-2 text-sm text-[#cbc7c2]">
+          <span className="inline-flex h-2.5 w-2.5 rounded-full bg-[#9f9a93]" />
           <NameSlot player={me} fallback="You" />
         </div>
-        <span className="text-lg font-bold tabular-nums text-slate-100">{formatTimer(myTime)}</span>
+        <span className="rounded-md bg-[#171716] px-4 py-1.5 text-xl font-bold tabular-nums text-[#f0ede6]">
+          {formatTimer(myTime)}
+        </span>
       </section>
     </div>
   )
