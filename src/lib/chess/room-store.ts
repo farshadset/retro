@@ -88,6 +88,26 @@ function clampMs(ms: number): number {
 export class RoomStore {
   private rooms = new Map<string, RoomState>()
 
+  private findWaitingRoom(input: {
+    timeControlMs: number
+    incrementMs: number
+    matchAnyTimeControl: boolean
+  }): RoomState | null {
+    const waitingRooms = Array.from(this.rooms.values())
+      .filter((room) => {
+        if (room.status !== 'waiting' || room.players.black) {
+          return false
+        }
+        if (input.matchAnyTimeControl) {
+          return true
+        }
+        return room.timeControlMs === input.timeControlMs && room.incrementMs === input.incrementMs
+      })
+      .sort((left, right) => left.createdAt - right.createdAt)
+
+    return waitingRooms[0] ?? null
+  }
+
   private cleanupExpiredRooms(): void {
     const now = Date.now()
     this.rooms.forEach((room, roomId) => {
@@ -252,6 +272,65 @@ export class RoomStore {
     this.cleanupExpiredRooms()
     const snapshot = this.emit(room, 'room-created')
     return { snapshot, session: room.sessionsByToken.get(token)! }
+  }
+
+  quickMatch(input: {
+    name: string
+    timeControlMs: number
+    incrementMs: number
+    matchAnyTimeControl: boolean
+  }): {
+    snapshot: RoomSnapshot
+    session: SessionRecord
+    matchedRoom: boolean
+  } {
+    const name = input.name.trim()
+    if (name.length < 2) {
+      throw new ChessApiError(400, 'INVALID_NAME', 'Player name must be at least 2 characters.')
+    }
+
+    this.cleanupExpiredRooms()
+    const waitingRoom = this.findWaitingRoom({
+      timeControlMs: input.timeControlMs,
+      incrementMs: input.incrementMs,
+      matchAnyTimeControl: input.matchAnyTimeControl,
+    })
+
+    if (!waitingRoom) {
+      const created = this.createRoom({
+        name,
+        timeControlMs: input.timeControlMs,
+        incrementMs: input.incrementMs,
+      })
+      return {
+        ...created,
+        matchedRoom: false,
+      }
+    }
+
+    const now = Date.now()
+    const token = randomUUID()
+    const playerId = randomUUID()
+    const color: PlayerColor = 'black'
+    waitingRoom.players.black = { id: playerId, name, color }
+    waitingRoom.status = 'active'
+    waitingRoom.activeSince = now
+
+    const session: SessionRecord = {
+      token,
+      playerId,
+      color,
+      name,
+    }
+    waitingRoom.sessionsByToken.set(token, session)
+    waitingRoom.updatedAt = now
+
+    const snapshot = this.emit(waitingRoom, 'player-joined')
+    return {
+      snapshot,
+      session,
+      matchedRoom: true,
+    }
   }
 
   joinRoom(input: { roomId: string; name: string }): {

@@ -6,17 +6,65 @@ test.describe('Home actions and profile registration', () => {
     await page.evaluate(() => localStorage.clear())
     await page.reload()
 
-    await expect(page.getByTestId('online-time-selector-btn')).toContainText('انتخاب زمان')
+    await expect(page.getByTestId('online-time-selector-btn')).toContainText('همه')
 
     await page.getByTestId('online-play-btn').click()
-    await expect(page.getByTestId('home-banner-message')).toContainText('قبل از شروع بازی آنلاین، زمان بازی را انتخاب کن.')
-    await expect(page.getByTestId('online-time-options-list')).toBeVisible()
+    await expect(page).toHaveURL(/\/online\?room=/)
+    await expect(page.getByText(/Room\s+[A-Z0-9]+/)).toBeVisible()
+    await page.evaluate(() => localStorage.removeItem('realtime-chess-session'))
+    await page.goto('/')
 
+    await page.getByTestId('online-time-selector-btn').click()
     await page.getByTestId('online-time-option-3-2').click()
     await expect(page.getByTestId('online-time-selector-btn')).toContainText('Blitz • 3+2')
 
     await page.reload()
     await expect(page.getByTestId('online-time-selector-btn')).toContainText('Blitz • 3+2')
+  })
+
+  test('online quick match with همه starts online game without requiring time selection', async ({ page, context }) => {
+    const seed = Date.now()
+    const firstUser = `quickmatch-a-${seed}`
+    const secondUser = `quickmatch-b-${seed}`
+    const password = 'secret123'
+
+    const registerUser = async (targetPage: import('@playwright/test').Page, username: string) => {
+      await targetPage.goto('/')
+      await targetPage.evaluate(() => localStorage.clear())
+      await targetPage.reload()
+      await targetPage.getByTestId('footer-tab-profile').click()
+      await targetPage.getByTestId('profile-mode-register').click()
+      await targetPage.getByTestId('profile-name-input').fill(username)
+      await targetPage.getByTestId('profile-password-input').fill(password)
+      await targetPage.getByTestId('profile-confirm-password-input').fill(password)
+      await targetPage.getByTestId('profile-register-btn').click()
+      await expect(targetPage.getByTestId('profile-username-value')).toContainText(username)
+      await targetPage.getByTestId('footer-tab-home').click()
+    }
+
+    await registerUser(page, firstUser)
+    await page.getByTestId('online-time-selector-btn').click()
+    await page.getByTestId('online-time-option-15-10').click()
+    await page.getByTestId('online-play-btn').click()
+    await expect(page).toHaveURL(/\/online\?room=/)
+    const firstRoomId = new URL(page.url()).searchParams.get('room')
+    expect(firstRoomId).toBeTruthy()
+    await expect(page.getByRole('heading', { name: 'Waiting for opponent' })).toBeVisible()
+    await page.goto('/')
+
+    const secondContext = await context.browser()?.newContext()
+    if (!secondContext) {
+      throw new Error('Could not create second browser context')
+    }
+    const secondPage = await secondContext.newPage()
+    await registerUser(secondPage, secondUser)
+    await expect(secondPage.getByTestId('online-time-selector-btn')).toContainText('همه')
+    await secondPage.getByTestId('online-play-btn').click()
+    await expect(secondPage).toHaveURL(/\/online\?room=/)
+    const secondRoomId = new URL(secondPage.url()).searchParams.get('room')
+    expect(secondRoomId).toBeTruthy()
+    await expect(secondPage.getByRole('heading', { name: /Waiting for opponent|In progress/ })).toBeVisible()
+    await secondContext.close()
   })
 
   test('home shows bot and personal options', async ({ page }) => {

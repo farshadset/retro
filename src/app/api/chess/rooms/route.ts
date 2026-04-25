@@ -5,6 +5,8 @@ interface CreateRoomBody {
   name: string
   timeControlMinutes?: number
   incrementSeconds?: number
+  quickMatch?: boolean
+  matchAnyTimeControl?: boolean
 }
 
 export async function POST(request: Request): Promise<Response> {
@@ -12,6 +14,8 @@ export async function POST(request: Request): Promise<Response> {
     const body = await parseJson<CreateRoomBody>(request)
     const minutes = Number(body.timeControlMinutes ?? 10)
     const incrementSeconds = Number(body.incrementSeconds ?? 2)
+    const quickMatch = Boolean(body.quickMatch)
+    const matchAnyTimeControl = Boolean(body.matchAnyTimeControl)
 
     if (!Number.isFinite(minutes) || minutes < 1 || minutes > 60) {
       return jsonResponse(
@@ -27,19 +31,26 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     const store = getRoomStore()
-    const { snapshot, session } = store.createRoom({
-      name: body.name ?? '',
-      timeControlMs: Math.floor(minutes * 60_000),
-      incrementMs: Math.floor(incrementSeconds * 1_000),
-    })
+    const result = quickMatch
+      ? store.quickMatch({
+          name: body.name ?? '',
+          timeControlMs: Math.floor(minutes * 60_000),
+          incrementMs: Math.floor(incrementSeconds * 1_000),
+          matchAnyTimeControl,
+        })
+      : store.createRoom({
+          name: body.name ?? '',
+          timeControlMs: Math.floor(minutes * 60_000),
+          incrementMs: Math.floor(incrementSeconds * 1_000),
+        })
 
     return jsonResponse({
-      snapshot,
+      snapshot: result.snapshot,
       session: {
-        token: session.token,
-        playerId: session.playerId,
-        color: session.color,
-        name: session.name,
+        token: result.session.token,
+        playerId: result.session.playerId,
+        color: result.session.color,
+        name: result.session.name,
       },
     })
   } catch (error: unknown) {

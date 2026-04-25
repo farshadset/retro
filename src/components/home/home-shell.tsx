@@ -66,7 +66,9 @@ const FOOTER_ITEMS: FooterItem[] = [
 ]
 
 const ONLINE_TIME_CONTROL_STORAGE_KEY = 'realtime-chess-online-time-control'
+const ONLINE_TIME_CONTROL_ANY_ID = 'all'
 const ONLINE_TIME_CONTROL_OPTIONS: OnlineTimeControlOption[] = [
+  { id: ONLINE_TIME_CONTROL_ANY_ID, label: 'همه', timeControlMinutes: 10, incrementSeconds: 2 },
   { id: '1-0', label: 'Bullet • 1+0', timeControlMinutes: 1, incrementSeconds: 0 },
   { id: '3-0', label: 'Blitz • 3+0', timeControlMinutes: 3, incrementSeconds: 0 },
   { id: '3-2', label: 'Blitz • 3+2', timeControlMinutes: 3, incrementSeconds: 2 },
@@ -845,7 +847,7 @@ export function HomeShell() {
   const [isStartingOnline, setIsStartingOnline] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [storageReady, setStorageReady] = useState(false)
-  const [selectedTimeControlId, setSelectedTimeControlId] = useState<string | null>(null)
+  const [selectedTimeControlId, setSelectedTimeControlId] = useState<string>(ONLINE_TIME_CONTROL_ANY_ID)
   const [isTimeControlOptionsOpen, setIsTimeControlOptionsOpen] = useState(false)
 
   const clearAuthState = useCallback((message?: string) => {
@@ -1058,26 +1060,21 @@ export function HomeShell() {
   useEffect(() => {
     const saved = localStorage.getItem(ONLINE_TIME_CONTROL_STORAGE_KEY)?.trim() ?? ''
     if (!saved) {
+      setSelectedTimeControlId(ONLINE_TIME_CONTROL_ANY_ID)
       return
     }
     const exists = ONLINE_TIME_CONTROL_OPTIONS.some((option) => option.id === saved)
     if (exists) {
       setSelectedTimeControlId(saved)
+    } else {
+      setSelectedTimeControlId(ONLINE_TIME_CONTROL_ANY_ID)
     }
   }, [])
 
   const handleStartOnline = async () => {
-    if (!selectedTimeControlId) {
-      setBannerMessage('قبل از شروع بازی آنلاین، زمان بازی را انتخاب کن.')
-      setIsTimeControlOptionsOpen(true)
-      return
-    }
-    const selectedTimeControl = ONLINE_TIME_CONTROL_OPTIONS.find((option) => option.id === selectedTimeControlId)
-    if (!selectedTimeControl) {
-      setBannerMessage('زمان انتخاب‌شده معتبر نیست. لطفاً دوباره انتخاب کن.')
-      setIsTimeControlOptionsOpen(true)
-      return
-    }
+    const selectedTimeControl =
+      ONLINE_TIME_CONTROL_OPTIONS.find((option) => option.id === selectedTimeControlId) ?? ONLINE_TIME_CONTROL_OPTIONS[0]
+    const matchAnyTimeControl = selectedTimeControl.id === ONLINE_TIME_CONTROL_ANY_ID
     const preferredName = profileName.trim() || 'Guest'
     setIsStartingOnline(true)
     setBannerMessage(null)
@@ -1086,6 +1083,8 @@ export function HomeShell() {
         name: preferredName,
         timeControlMinutes: selectedTimeControl.timeControlMinutes,
         incrementSeconds: selectedTimeControl.incrementSeconds,
+        quickMatch: true,
+        matchAnyTimeControl,
       })
       localStorage.setItem(
         'realtime-chess-session',
@@ -1138,7 +1137,7 @@ export function HomeShell() {
   }
 
   const selectedTimeControlLabel =
-    ONLINE_TIME_CONTROL_OPTIONS.find((option) => option.id === selectedTimeControlId)?.label ?? 'انتخاب زمان'
+    ONLINE_TIME_CONTROL_OPTIONS.find((option) => option.id === selectedTimeControlId)?.label ?? 'همه'
 
   const handleSubmitAuth = async () => {
     if (!storageReady) {
