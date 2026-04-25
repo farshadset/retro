@@ -198,6 +198,7 @@ interface ProfileContentProps {
   notifications: NotificationItem[]
   notificationUnreadCount: number
   onMarkNotificationsRead: (notificationIds?: string[]) => void
+  onLogout: () => void
   friendsLoading: boolean
 }
 
@@ -243,6 +244,7 @@ function ProfileContent(props: ProfileContentProps) {
     notifications,
     notificationUnreadCount,
     onMarkNotificationsRead,
+    onLogout,
     friendsLoading,
   } = props
 
@@ -251,7 +253,17 @@ function ProfileContent(props: ProfileContentProps) {
   if (isAuthenticated) {
     return (
       <section className="w-full max-w-md space-y-4 rounded-2xl border border-slate-700 bg-slate-900/70 p-5 shadow-lg">
-        <h2 className="text-center text-xl font-bold text-slate-100">پروفایل من</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-bold text-slate-100">پروفایل من</h2>
+          <button
+            type="button"
+            onClick={onLogout}
+            data-testid="profile-logout-btn"
+            className="rounded-md border border-rose-400/60 px-3 py-1.5 text-xs font-semibold text-rose-200 transition hover:bg-rose-500/10"
+          >
+            خروج
+          </button>
+        </div>
 
         <div className="space-y-2 rounded-xl border border-slate-700 bg-slate-950/70 p-4">
           <p className="text-xs text-slate-400">نام کاربری</p>
@@ -1211,6 +1223,16 @@ export function HomeShell() {
     }
   }
 
+  const handleLogout = () => {
+    clearAuthState('با موفقیت از حساب کاربری خارج شدید.')
+    setProfileMode('login')
+    setPassword('')
+    setConfirmPassword('')
+    setCurrentPassword('')
+    setNewPassword('')
+    setConfirmNewPassword('')
+  }
+
   return (
     <main className="flex min-h-screen flex-col bg-gradient-to-b from-slate-950 to-slate-900 text-slate-100" dir="rtl">
       <div className="flex flex-1 items-center justify-center px-4 py-8">
@@ -1275,6 +1297,7 @@ export function HomeShell() {
               notifications={notifications}
               notificationUnreadCount={notificationUnreadCount}
               onMarkNotificationsRead={handleMarkNotificationsRead}
+              onLogout={handleLogout}
               friendsLoading={friendsLoading}
             />
           ) : null}

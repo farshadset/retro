@@ -72,6 +72,12 @@ test.describe('Home actions and profile registration', () => {
     await secondPage.getByTestId('profile-panel-notifications').click()
     await expect(secondPage.getByTestId('notifications-list')).toContainText('از لیست دوستان حذف کرد')
 
+    await page.getByTestId('profile-logout-btn').click()
+    await expect(page.getByTestId('profile-login-btn')).toBeVisible()
+    await page.getByTestId('footer-tab-home').click()
+    await page.getByTestId('footer-tab-profile').click()
+    await expect(page.getByTestId('profile-login-btn')).toBeVisible()
+
     await page.getByTestId('footer-tab-home').click()
     await page.getByTestId('online-play-btn').click()
     await expect(page).toHaveURL(/\/online\?room=/)
