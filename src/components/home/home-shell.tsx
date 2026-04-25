@@ -739,7 +739,9 @@ export function HomeShell() {
     }
 
     try {
-      const response = await fetch(`/api/profile/friends?username=${encodeURIComponent(normalized)}`)
+      const response = await fetch(
+        `/api/profile?action=friendsOverview&username=${encodeURIComponent(normalized)}`
+      )
       const payload = await parseJsonSafe(response)
       if (!response.ok) {
         if (payload.error?.code === 'USER_NOT_FOUND') {
@@ -772,7 +774,9 @@ export function HomeShell() {
     }
 
     try {
-      const response = await fetch(`/api/profile/notifications?username=${encodeURIComponent(normalized)}`)
+      const response = await fetch(
+        `/api/profile?action=notifications&username=${encodeURIComponent(normalized)}`
+      )
       const payload = await parseJsonSafe(response)
       if (!response.ok) {
         if (payload.error?.code === 'USER_NOT_FOUND') {
@@ -806,7 +810,7 @@ export function HomeShell() {
 
     try {
       const response = await fetch(
-        `/api/profile/friends/search?username=${encodeURIComponent(normalizedUsername)}&query=${encodeURIComponent(normalizedQuery)}`,
+        `/api/profile?action=searchUsers&username=${encodeURIComponent(normalizedUsername)}&query=${encodeURIComponent(normalizedQuery)}`,
         { signal }
       )
       const payload = await parseJsonSafe(response)
@@ -922,8 +926,7 @@ export function HomeShell() {
     setIsSubmitting(true)
     setBannerMessage(null)
     try {
-      const endpoint = profileMode === 'register' ? '/api/profile/register' : '/api/profile/login'
-      const response = await fetch(endpoint, {
+      const response = await fetch(`/api/profile?action=${profileMode === 'register' ? 'register' : 'login'}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(
@@ -974,7 +977,7 @@ export function HomeShell() {
     setIsSubmitting(true)
     setBannerMessage(null)
     try {
-      const response = await fetch('/api/profile/update-username', {
+      const response = await fetch('/api/profile?action=updateUsername', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1026,7 +1029,7 @@ export function HomeShell() {
     setIsSubmitting(true)
     setBannerMessage(null)
     try {
-      const response = await fetch('/api/profile/change-password', {
+      const response = await fetch('/api/profile?action=changePassword', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1063,7 +1066,7 @@ export function HomeShell() {
     setFriendsLoading(true)
     setBannerMessage(null)
     try {
-      const response = await fetch('/api/profile/friends/request', {
+      const response = await fetch('/api/profile?action=sendFriendRequest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1097,7 +1100,7 @@ export function HomeShell() {
     setFriendsLoading(true)
     setBannerMessage(null)
     try {
-      const response = await fetch('/api/profile/friends/respond', {
+      const response = await fetch('/api/profile?action=respondFriendRequest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1132,7 +1135,7 @@ export function HomeShell() {
     setFriendsLoading(true)
     setBannerMessage(null)
     try {
-      const response = await fetch('/api/profile/friends/cancel-request', {
+      const response = await fetch('/api/profile?action=cancelOutgoingRequest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1166,7 +1169,7 @@ export function HomeShell() {
     setFriendsLoading(true)
     setBannerMessage(null)
     try {
-      const response = await fetch('/api/profile/friends/remove', {
+      const response = await fetch('/api/profile?action=removeFriend', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1198,7 +1201,7 @@ export function HomeShell() {
 
     setFriendsLoading(true)
     try {
-      const response = await fetch('/api/profile/notifications', {
+      const response = await fetch('/api/profile?action=markNotificationsRead', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
