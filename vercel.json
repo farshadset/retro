@@ -2,5 +2,10 @@
   "buildCommand": "npm run build",
   "outputDirectory": ".next",
   "framework": "nextjs",
-  "regions": ["cdg1"]
+  "regions": ["cdg1"],
+  "functions": {
+    "src/app/api/chess/rooms/[roomId]/events/route.ts": {
+      "maxDuration": 60
+    }
+  }
 }
