@@ -207,6 +207,7 @@ function formatSnapshot(chess: Chess, lastMove: RoomSnapshot['lastMove'], moves:
     drawReason,
     lastMove,
     moves,
+    chatMessages: [],
     players: {
       white: { id: 'player-local', name: 'You', color: 'white' },
       black: { id: 'player-bot', name: 'Robot', color: 'black' },

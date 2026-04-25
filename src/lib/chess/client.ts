@@ -95,6 +95,24 @@ export async function resign(input: { roomId: string; token: string }): Promise<
   return parseApiResponse<SnapshotResponse>(response)
 }
 
+export async function sendChatMessage(input: {
+  roomId: string
+  token: string
+  kind: 'text' | 'sticker'
+  value: string
+}): Promise<SnapshotResponse> {
+  const response = await fetch(apiUrl(`/api/chess/rooms/${input.roomId}/chat`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      token: input.token,
+      kind: input.kind,
+      value: input.value,
+    }),
+  })
+  return parseApiResponse<SnapshotResponse>(response)
+}
+
 export function roomEventsUrl(roomId: string): string {
   return apiUrl(`/api/chess/rooms/${roomId}/events`)
 }

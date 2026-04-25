@@ -13,6 +13,19 @@ export interface LastMove {
   san: string
 }
 
+export type ChatMessageType = 'text' | 'sticker'
+
+export interface ChatMessage {
+  id: string
+  senderColor: PlayerColor
+  senderName: string
+  type: ChatMessageType
+  value: string
+  createdAt: number
+}
+
+export type RoomChatMessage = ChatMessage
+
 export interface RoomSnapshot {
   roomId: string
   status: RoomStatus
@@ -23,6 +36,7 @@ export interface RoomSnapshot {
   drawReason: string | null
   lastMove: LastMove | null
   moves: string[]
+  chatMessages: ChatMessage[]
   players: {
     white: RoomPlayer | null
     black: RoomPlayer | null

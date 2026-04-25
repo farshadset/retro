@@ -86,6 +86,62 @@ test.describe('Home actions and profile registration', () => {
     await expect(page.getByTestId('waiting-share-btn')).toBeVisible()
   })
 
+  test('online game shows chat presets and resign button near chat', async ({ page, context }) => {
+    const seed = Date.now()
+    const firstUser = `chat-a-${seed}`
+    const secondUser = `chat-b-${seed}`
+    const password = 'secret123'
+
+    const registerUser = async (targetPage: import('@playwright/test').Page, username: string) => {
+      await targetPage.goto('/')
+      await targetPage.evaluate(() => localStorage.clear())
+      await targetPage.reload()
+      await targetPage.getByTestId('footer-tab-profile').click()
+      await targetPage.getByTestId('profile-mode-register').click()
+      await targetPage.getByTestId('profile-name-input').fill(username)
+      await targetPage.getByTestId('profile-password-input').fill(password)
+      await targetPage.getByTestId('profile-confirm-password-input').fill(password)
+      await targetPage.getByTestId('profile-register-btn').click()
+      await expect(targetPage.getByTestId('profile-username-value')).toContainText(username)
+      await targetPage.getByTestId('footer-tab-home').click()
+    }
+
+    await registerUser(page, firstUser)
+    await page.getByTestId('online-play-btn').click()
+    await expect(page).toHaveURL(/(\/online\?room=|\?room=)/)
+    const firstRoomId = new URL(page.url()).searchParams.get('room')
+    expect(firstRoomId).toBeTruthy()
+
+    const secondContext = await context.browser()?.newContext()
+    if (!secondContext) {
+      throw new Error('Could not create second browser context')
+    }
+    const secondPage = await secondContext.newPage()
+    await registerUser(secondPage, secondUser)
+    await secondPage.getByTestId('online-play-btn').click()
+    await expect(secondPage).toHaveURL(/(\/online\?room=|\?room=)/)
+
+    await page.getByTestId('chat-toggle-btn').click()
+    await secondPage.getByTestId('chat-toggle-btn').click()
+    await expect(page.getByTestId('chat-panel')).toBeVisible()
+    await expect(page.getByTestId('chat-resign-btn')).toBeVisible()
+    await expect(page.getByTestId('chat-quick-ایول')).toBeVisible()
+    await expect(page.getByTestId(`chat-sticker-${encodeURIComponent('♔')}`)).toBeVisible()
+
+    await page.getByTestId('chat-quick-ایول').click()
+    await expect(page.getByTestId('chat-message-list')).toContainText('ایول')
+    await expect.poll(async () => {
+      return secondPage.evaluate(async (roomId) => {
+        const response = await fetch(`/api/chess/rooms/${roomId}`)
+        const payload = await response.json()
+        const chatMessages = payload.snapshot?.chatMessages ?? []
+        return chatMessages.some((message: { value?: string }) => message.value === 'ایول')
+      }, firstRoomId ?? '')
+    }).toBe(true)
+
+    await secondContext.close()
+  })
+
   test('home shows bot and personal options', async ({ page }) => {
     await page.goto('/')
     await expect(page.getByTestId('offline-play-btn')).toContainText('بازی با بات')

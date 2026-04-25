@@ -1,9 +1,9 @@
 import { Chess, Move } from 'chess.js'
 import { randomUUID } from 'crypto'
-import { LastMove, PlayerColor, RoomPlayer, RoomSnapshot, RoomStatus } from './types'
+import { ChatMessage, LastMove, PlayerColor, RoomPlayer, RoomSnapshot, RoomStatus } from './types'
 import { assertChessRuntimeSafety, getChessRuntimeConfig } from './runtime-config'
 
-type EventType = 'snapshot' | 'move' | 'room-created' | 'player-joined' | 'resigned' | 'game-over'
+type EventType = 'snapshot' | 'move' | 'room-created' | 'player-joined' | 'resigned' | 'game-over' | 'chat'
 
 interface RoomEvent {
   id: number
@@ -32,6 +32,7 @@ interface RoomState {
   subscribers: Set<(event: RoomEvent) => void>
   sequence: number
   lastMove: LastMove | null
+  chatMessages: ChatMessage[]
   winner: PlayerColor | null
   drawReason: string | null
   timeControlMs: number
@@ -47,6 +48,35 @@ const ROOM_ID_LENGTH = 6
 const runtimeConfig = getChessRuntimeConfig()
 const MAX_ROOMS = runtimeConfig.roomStoreMaxRooms
 const ROOM_TTL_MS = runtimeConfig.roomStoreTtlMs
+const ALLOWED_CHAT_TEXTS = new Set([
+  'ایول',
+  'عجب حرکتی بود',
+  'دمت گرم',
+  'نوبت تو',
+  'آفرین',
+  'حرکت خوبی بود',
+  'خوبه!',
+])
+const ALLOWED_CHAT_STICKERS = new Set([
+  '👍',
+  '🔥',
+  '👏',
+  '😮',
+  '😅',
+  '🤝',
+  '♔',
+  '♕',
+  '♖',
+  '♗',
+  '♘',
+  '♙',
+  '♚',
+  '♛',
+  '♜',
+  '♝',
+  '♞',
+  '♟',
+])
 
 class ChessApiError extends Error {
   status: number
@@ -180,6 +210,7 @@ export class RoomStore {
       winner: room.winner,
       drawReason: room.drawReason,
       lastMove: room.lastMove,
+      chatMessages: room.chatMessages,
       moves: room.chess.history(),
       players: {
         white: room.players.white,
@@ -262,6 +293,7 @@ export class RoomStore {
       subscribers: new Set(),
       sequence: 1,
       lastMove: null,
+      chatMessages: [],
       winner: null,
       drawReason: null,
       timeControlMs: input.timeControlMs,
@@ -476,6 +508,50 @@ export class RoomStore {
     room.activeSince = Date.now()
     room.updatedAt = room.activeSince
     return this.emit(room, 'move')
+  }
+
+  sendChatMessage(input: {
+    roomId: string
+    token: string
+    kind: 'text' | 'sticker'
+    value: string
+  }): RoomSnapshot {
+    const room = this.getRoomOrThrow(input.roomId)
+    const session = this.ensurePlayerToken(room, input.token)
+    if (session.color === null) {
+      throw new ChessApiError(403, 'SPECTATOR_FORBIDDEN', 'Spectators cannot send chat messages.')
+    }
+
+    const kind = input.kind
+    if (kind !== 'text' && kind !== 'sticker') {
+      throw new ChessApiError(400, 'INVALID_CHAT_KIND', 'Chat kind must be text or sticker.')
+    }
+    const value = input.value.trim()
+    if (!value) {
+      throw new ChessApiError(400, 'INVALID_CHAT_MESSAGE', 'Chat message cannot be empty.')
+    }
+    if (value.length > 64) {
+      throw new ChessApiError(400, 'INVALID_CHAT_MESSAGE', 'Chat message is too long.')
+    }
+
+    if (kind === 'text' && !ALLOWED_CHAT_TEXTS.has(value)) {
+      throw new ChessApiError(400, 'INVALID_CHAT_MESSAGE', 'This quick chat text is not allowed.')
+    }
+    if (kind === 'sticker' && !ALLOWED_CHAT_STICKERS.has(value)) {
+      throw new ChessApiError(400, 'INVALID_CHAT_MESSAGE', 'This sticker is not allowed.')
+    }
+
+    const chatMessage: ChatMessage = {
+      id: randomUUID(),
+      senderColor: session.color,
+      senderName: session.name,
+      type: kind,
+      value,
+      createdAt: Date.now(),
+    }
+    room.chatMessages = [...room.chatMessages.slice(-29), chatMessage]
+    room.updatedAt = Date.now()
+    return this.emit(room, 'chat')
   }
 
   resign(input: { roomId: string; token: string }): RoomSnapshot {
