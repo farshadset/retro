@@ -1,6 +1,54 @@
 import { test, expect } from '@playwright/test'
 
 test.describe('Home actions and profile registration', () => {
+  test('friend play shows friends with online indicator', async ({ page, context }) => {
+    const seed = Date.now()
+    const userA = `friendplay-a-${seed}`
+    const userB = `friendplay-b-${seed}`
+    const password = 'secret123'
+
+    await page.goto('/')
+    await page.evaluate(() => localStorage.clear())
+    await page.reload()
+
+    await page.getByTestId('footer-tab-profile').click()
+    await page.getByTestId('profile-mode-register').click()
+    await page.getByTestId('profile-name-input').fill(userA)
+    await page.getByTestId('profile-password-input').fill(password)
+    await page.getByTestId('profile-confirm-password-input').fill(password)
+    await page.getByTestId('profile-register-btn').click()
+
+    const secondContext = await context.browser()?.newContext()
+    if (!secondContext) {
+      throw new Error('Could not create second browser context')
+    }
+    const secondPage = await secondContext.newPage()
+    await secondPage.goto('/')
+    await secondPage.evaluate(() => localStorage.clear())
+    await secondPage.reload()
+    await secondPage.getByTestId('footer-tab-profile').click()
+    await secondPage.getByTestId('profile-mode-register').click()
+    await secondPage.getByTestId('profile-name-input').fill(userB)
+    await secondPage.getByTestId('profile-password-input').fill(password)
+    await secondPage.getByTestId('profile-confirm-password-input').fill(password)
+    await secondPage.getByTestId('profile-register-btn').click()
+
+    await page.getByTestId('friends-search-input').fill(userB)
+    await page.getByTestId(`friends-send-request-${userB}`).click()
+    await expect(secondPage.getByTestId(`friends-incoming-row-${userA}`)).toBeVisible({ timeout: 10000 })
+    await secondPage.getByTestId(`friends-accept-${userA}`).click()
+    await expect(page.getByTestId(`friends-list-row-${userB}`)).toBeVisible({ timeout: 10000 })
+
+    await page.getByTestId('footer-tab-home').click()
+    await page.getByTestId('friend-play-btn').click()
+
+    await expect(page.getByTestId('friend-play-panel')).toBeVisible()
+    await expect(page.getByTestId(`friend-play-row-${userB}`)).toBeVisible()
+    await expect(page.getByTestId(`friend-play-status-dot-${userB}`)).toHaveClass(/bg-emerald-500/)
+
+    await secondContext.close()
+  })
+
   test('offline game starts and robot responds to move', async ({ page }) => {
     await page.goto('/')
     await page.getByTestId('offline-play-btn').click()

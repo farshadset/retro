@@ -9,12 +9,18 @@ type FooterTab = 'home' | 'profile' | 'puzzle' | 'news'
 type ProfileMode = 'login' | 'register'
 type FriendRelation = 'none' | 'friend' | 'incoming' | 'outgoing'
 type ProfilePanel = 'friends' | 'notifications'
+type HomePanel = 'menu' | 'friend-play'
 type NotificationType =
   | 'friend_request_received'
   | 'friend_request_accepted'
   | 'friend_request_rejected'
   | 'friend_request_canceled'
   | 'friend_removed'
+
+interface FriendPresenceItem {
+  username: string
+  online: boolean
+}
 
 interface NotificationItem {
   id: string
@@ -35,6 +41,7 @@ interface ApiResponse {
   persistence?: string
   user?: { username: string }
   friends?: string[]
+  friendPresence?: FriendPresenceItem[]
   incomingRequests?: string[]
   outgoingRequests?: string[]
   incomingCount?: number
@@ -117,15 +124,72 @@ function CrossIcon() {
 
 function HomeContent({
   onStartOnline,
+  onOpenFriendPlay,
   onStartOffline,
-  onSoon,
+  onBackToMenu,
+  homePanel,
+  friendPresence,
   isStartingOnline,
 }: {
   onStartOnline: () => void
+  onOpenFriendPlay: () => void
   onStartOffline: () => void
-  onSoon: () => void
+  onBackToMenu: () => void
+  homePanel: HomePanel
+  friendPresence: FriendPresenceItem[]
   isStartingOnline: boolean
 }) {
+  if (homePanel === 'friend-play') {
+    return (
+      <section
+        className="w-full max-w-md space-y-4 rounded-2xl border border-slate-700 bg-slate-900/70 p-5 shadow-lg"
+        data-testid="friend-play-panel"
+      >
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-lg font-bold text-slate-100">انتخاب دوست برای بازی</h2>
+          <button
+            type="button"
+            onClick={onBackToMenu}
+            data-testid="friend-play-back-btn"
+            className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-800"
+          >
+            بازگشت
+          </button>
+        </div>
+        <p className="text-sm text-slate-300">وضعیت آنلاین دوستانت را اینجا می‌بینی.</p>
+        {friendPresence.length === 0 ? (
+          <p className="rounded-lg border border-slate-700 bg-slate-950/70 px-3 py-3 text-sm text-slate-400" data-testid="friend-play-empty">
+            هنوز دوستی نداری. اول از تب پروفایل دوست اضافه کن.
+          </p>
+        ) : (
+          <div className="space-y-2" data-testid="friend-play-list">
+            {friendPresence.map((friend) => (
+              <div
+                key={friend.username}
+                data-testid={`friend-play-row-${friend.username}`}
+                className="flex items-center justify-between rounded-lg border border-slate-700 bg-slate-950/65 px-3 py-2"
+              >
+                <p className="text-sm font-semibold text-slate-100">{friend.username}</p>
+                <div className="inline-flex items-center gap-2 text-xs">
+                  <span
+                    data-testid={`friend-play-status-dot-${friend.username}`}
+                    className={[
+                      'h-2.5 w-2.5 rounded-full',
+                      friend.online ? 'bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.25)]' : 'bg-slate-500',
+                    ].join(' ')}
+                  />
+                  <span className={friend.online ? 'text-emerald-300' : 'text-slate-400'}>
+                    {friend.online ? 'آنلاین' : 'آفلاین'}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+    )
+  }
+
   return (
     <section className="w-full max-w-md space-y-4 rounded-2xl border border-slate-700 bg-slate-900/70 p-5 shadow-lg">
       <h2 className="text-center text-xl font-bold text-slate-100">صفحه خانه</h2>
@@ -142,7 +206,7 @@ function HomeContent({
         </button>
         <button
           type="button"
-          onClick={onSoon}
+          onClick={onOpenFriendPlay}
           data-testid="friend-play-btn"
           className="w-full rounded-xl border border-cyan-400/40 bg-cyan-500/10 px-4 py-3 text-base font-semibold text-cyan-100 transition hover:bg-cyan-500/20"
         >
@@ -692,6 +756,7 @@ export function HomeShell() {
   const [activeTab, setActiveTab] = useState<FooterTab>('home')
   const [profileMode, setProfileMode] = useState<ProfileMode>('login')
   const [activePanel, setActivePanel] = useState<ProfilePanel>('friends')
+  const [homePanel, setHomePanel] = useState<HomePanel>('menu')
   const [profileName, setProfileName] = useState('')
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [draftName, setDraftName] = useState('')
@@ -708,6 +773,7 @@ export function HomeShell() {
   const [incomingRequestCount, setIncomingRequestCount] = useState(0)
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const [notificationUnreadCount, setNotificationUnreadCount] = useState(0)
+  const [friendPresence, setFriendPresence] = useState<FriendPresenceItem[]>([])
   const [friendSearchQuery, setFriendSearchQuery] = useState('')
   const [friendSearchResults, setFriendSearchResults] = useState<Array<{ username: string; relation: FriendRelation }>>([])
   const [friendsLoading, setFriendsLoading] = useState(false)
@@ -727,8 +793,10 @@ export function HomeShell() {
     setIncomingRequests([])
     setOutgoingRequests([])
     setIncomingRequestCount(0)
+    setFriendPresence([])
     setNotifications([])
     setNotificationUnreadCount(0)
+    setHomePanel('menu')
     setActivePanel('friends')
     setFriendSearchQuery('')
     setFriendSearchResults([])
@@ -760,6 +828,8 @@ export function HomeShell() {
       }
 
       setFriends(payload.friends ?? [])
+      const fallbackPresence = (payload.friends ?? []).map((username) => ({ username, online: false }))
+      setFriendPresence(payload.friendPresence ?? fallbackPresence)
       setIncomingRequests(payload.incomingRequests ?? [])
       setOutgoingRequests(payload.outgoingRequests ?? [])
       setIncomingRequestCount(payload.incomingCount ?? 0)
@@ -869,11 +939,13 @@ export function HomeShell() {
   useEffect(() => {
     if (!isAuthenticated || !profileName.trim()) {
       setFriends([])
+      setFriendPresence([])
       setIncomingRequests([])
       setOutgoingRequests([])
       setIncomingRequestCount(0)
       setNotifications([])
       setNotificationUnreadCount(0)
+      setHomePanel('menu')
       return
     }
     void loadFriendsOverview(profileName, true)
@@ -910,6 +982,12 @@ export function HomeShell() {
     }
   }, [friendSearchQuery, isAuthenticated, profileName, searchUsers])
 
+  useEffect(() => {
+    if (activeTab !== 'home') {
+      setHomePanel('menu')
+    }
+  }, [activeTab])
+
   const handleStartOnline = async () => {
     const preferredName = profileName.trim() || 'Guest'
     setIsStartingOnline(true)
@@ -933,12 +1011,22 @@ export function HomeShell() {
     }
   }
 
-  const handleSoon = () => {
-    setBannerMessage('این گزینه در مرحله بعدی تکمیل می‌شود. فعلاً بازی آنلاین فعال است.')
-  }
-
   const handleStartOffline = () => {
     router.push('/offline')
+  }
+
+  const handleOpenFriendPlay = () => {
+    if (!isAuthenticated || !profileName.trim()) {
+      setBannerMessage('برای دیدن لیست دوستان اول وارد حساب کاربری شوید.')
+      setActiveTab('profile')
+      return
+    }
+    setHomePanel('friend-play')
+    void loadFriendsOverview(profileName, true)
+  }
+
+  const handleBackToHomeMenu = () => {
+    setHomePanel('menu')
   }
 
   const handleSubmitAuth = async () => {
@@ -1286,8 +1374,11 @@ export function HomeShell() {
           {activeTab === 'home' ? (
             <HomeContent
               onStartOnline={handleStartOnline}
+              onOpenFriendPlay={handleOpenFriendPlay}
               onStartOffline={handleStartOffline}
-              onSoon={handleSoon}
+              onBackToMenu={handleBackToHomeMenu}
+              homePanel={homePanel}
+              friendPresence={friendPresence}
               isStartingOnline={isStartingOnline}
             />
           ) : null}
@@ -1360,7 +1451,12 @@ export function HomeShell() {
               <button
                 key={item.id}
                 type="button"
-                onClick={() => setActiveTab(item.id)}
+                onClick={() => {
+                  setActiveTab(item.id)
+                  if (item.id !== 'home') {
+                    setHomePanel('menu')
+                  }
+                }}
                 data-testid={`footer-tab-${item.id}`}
                 className={[
                   'rounded-xl px-3 py-3 text-sm font-bold transition',

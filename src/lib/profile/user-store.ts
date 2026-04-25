@@ -20,6 +20,7 @@ interface RegisteredUser {
   username: string
   passwordHash: string
   createdAt: number
+  lastActiveAt: number | null
   friends: string[]
   incomingRequests: string[]
   outgoingRequests: string[]
@@ -34,6 +35,13 @@ interface NotificationView {
   createdAt: number
   read: boolean
 }
+
+interface FriendPresenceView {
+  username: string
+  online: boolean
+}
+
+const ONLINE_WINDOW_MS = 35_000
 
 export interface UserStoreSnapshot {
   users: Array<{ normalizedUsername: string; user: RegisteredUser }>
@@ -68,6 +76,7 @@ class UserStore {
       username: user.username,
       passwordHash: user.passwordHash,
       createdAt: user.createdAt,
+      lastActiveAt: user.lastActiveAt,
       friends: [...user.friends],
       incomingRequests: [...user.incomingRequests],
       outgoingRequests: [...user.outgoingRequests],
@@ -132,6 +141,13 @@ class UserStore {
     if (!Array.isArray(user.notifications)) {
       user.notifications = []
     }
+    if (typeof user.lastActiveAt !== 'number' && user.lastActiveAt !== null) {
+      user.lastActiveAt = null
+    }
+  }
+
+  private markUserActive(user: RegisteredUser): void {
+    user.lastActiveAt = Date.now()
   }
 
   private pushUnique(list: string[], value: string): void {
@@ -191,6 +207,25 @@ class UserStore {
       .map((normalized) => this.getDisplayUsername(normalized))
       .filter((username): username is string => Boolean(username))
       .sort((left, right) => left.localeCompare(right))
+  }
+
+  private toDisplayFriendPresence(usernames: string[]): FriendPresenceView[] {
+    const now = Date.now()
+    const friendPresence = usernames
+      .map((normalized) => {
+        const user = this.usersByName.get(normalized)
+        if (!user) {
+          return null
+        }
+        this.ensureSocialState(user)
+        return {
+          username: user.username,
+          online: user.lastActiveAt !== null && now - user.lastActiveAt <= ONLINE_WINDOW_MS,
+        }
+      })
+      .filter((friend): friend is FriendPresenceView => Boolean(friend))
+    friendPresence.sort((left, right) => left.username.localeCompare(right.username))
+    return friendPresence
   }
 
   private addNotification(target: RegisteredUser, type: NotificationType, actor: string): void {
@@ -261,6 +296,7 @@ class UserStore {
       username,
       passwordHash,
       createdAt: Date.now(),
+      lastActiveAt: Date.now(),
       friends: [],
       incomingRequests: [],
       outgoingRequests: [],
@@ -287,6 +323,7 @@ class UserStore {
     if (user.passwordHash !== passwordHash) {
       throw new ProfileApiError(401, 'INVALID_CREDENTIALS', 'نام کاربری یا رمز عبور اشتباه است.')
     }
+    this.markUserActive(user)
 
     return { username: user.username }
   }
@@ -308,6 +345,7 @@ class UserStore {
 
     if (normalizedCurrent === normalizedNext) {
       user.username = newUsername
+      this.markUserActive(user)
       this.usersByName.set(normalizedCurrent, user)
       return { username: user.username }
     }
@@ -318,6 +356,7 @@ class UserStore {
 
     this.usersByName.delete(normalizedCurrent)
     user.username = newUsername
+    this.markUserActive(user)
     this.usersByName.set(normalizedNext, user)
 
     this.usersByName.forEach((storedUser) => {
@@ -361,6 +400,7 @@ class UserStore {
 
     const normalized = this.normalizeUsername(username)
     const user = this.getUserByNormalizedUsername(normalized)
+    this.markUserActive(user)
 
     const currentPasswordHash = this.hashPassword(currentPassword)
     if (user.passwordHash !== currentPasswordHash) {
@@ -376,6 +416,7 @@ class UserStore {
   getFriendsOverview(input: { username: string }): {
     username: string
     friends: string[]
+    friendPresence: FriendPresenceView[]
     incomingRequests: string[]
     outgoingRequests: string[]
     incomingCount: number
@@ -386,13 +427,16 @@ class UserStore {
     }
 
     const user = this.getUserByNormalizedUsername(normalized)
+    this.markUserActive(user)
     const friends = this.toDisplayUsernames(user.friends)
+    const friendPresence = this.toDisplayFriendPresence(user.friends)
     const incomingRequests = this.toDisplayUsernames(user.incomingRequests)
     const outgoingRequests = this.toDisplayUsernames(user.outgoingRequests)
 
     return {
       username: user.username,
       friends,
+      friendPresence,
       incomingRequests,
       outgoingRequests,
       incomingCount: incomingRequests.length,
@@ -412,6 +456,7 @@ class UserStore {
     }
 
     const user = this.getUserByNormalizedUsername(normalized)
+    this.markUserActive(user)
     const results: Array<{ username: string; relation: FriendRelation }> = []
 
     this.usersByName.forEach((candidate, candidateNormalized) => {
@@ -452,6 +497,7 @@ class UserStore {
 
     const fromUser = this.getUserByNormalizedUsername(fromNormalized)
     const toUser = this.getUserByNormalizedUsername(toNormalized)
+    this.markUserActive(fromUser)
 
     if (fromUser.friends.includes(toNormalized)) {
       throw new ProfileApiError(409, 'ALREADY_FRIENDS', 'این کاربر از قبل در لیست دوستان شما است.')
@@ -494,6 +540,7 @@ class UserStore {
 
     const user = this.getUserByNormalizedUsername(usernameNormalized)
     const sender = this.getUserByNormalizedUsername(fromNormalized)
+    this.markUserActive(user)
 
     if (!user.incomingRequests.includes(fromNormalized)) {
       throw new ProfileApiError(404, 'REQUEST_NOT_FOUND', 'درخواست دوستی موردنظر پیدا نشد.')
@@ -523,6 +570,7 @@ class UserStore {
 
     const user = this.getUserByNormalizedUsername(usernameNormalized)
     const target = this.getUserByNormalizedUsername(targetNormalized)
+    this.markUserActive(user)
 
     if (!user.outgoingRequests.includes(targetNormalized)) {
       throw new ProfileApiError(404, 'REQUEST_NOT_FOUND', 'درخواست دوستی ارسالی پیدا نشد.')
@@ -551,6 +599,7 @@ class UserStore {
 
     const user = this.getUserByNormalizedUsername(usernameNormalized)
     const friend = this.getUserByNormalizedUsername(friendNormalized)
+    this.markUserActive(user)
 
     if (!user.friends.includes(friendNormalized)) {
       throw new ProfileApiError(404, 'FRIEND_NOT_FOUND', 'این کاربر در لیست دوستان شما نیست.')
@@ -571,6 +620,7 @@ class UserStore {
     }
 
     const user = this.getUserByNormalizedUsername(normalized)
+    this.markUserActive(user)
     const notifications = [...user.notifications]
       .sort((left, right) => right.createdAt - left.createdAt)
       .map((notification) => this.toNotificationView(notification))
@@ -590,6 +640,7 @@ class UserStore {
     }
 
     const user = this.getUserByNormalizedUsername(normalized)
+    this.markUserActive(user)
     const ids = input.notificationIds ?? []
     const markAll = ids.length === 0
 
@@ -602,6 +653,7 @@ class UserStore {
     const unreadCount = user.notifications.filter((notification) => !notification.read).length
     return { unreadCount }
   }
+
 }
 
 declare global {
