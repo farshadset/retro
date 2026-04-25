@@ -8,7 +8,8 @@ const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] as const
 const RANKS = ['8', '7', '6', '5', '4', '3', '2', '1'] as const
 
 interface ChessBoardProps {
-  snapshot: RoomSnapshot
+  fen: string
+  lastMove: RoomSnapshot['lastMove']
   perspective: PlayerColor
   selectedSquare: Square | null
   highlightedMoves: Square[]
@@ -33,7 +34,8 @@ const PIECE_IMAGES: Record<PieceCode, string> = {
 }
 
 function ChessBoardComponent({
-  snapshot,
+  fen,
+  lastMove,
   perspective,
   selectedSquare,
   highlightedMoves,
@@ -45,7 +47,7 @@ function ChessBoardComponent({
   const highlightedSet = useMemo(() => new Set(highlightedMoves), [highlightedMoves])
   const pieceBySquare = useMemo(() => {
     const nextPieceMap = new Map<Square, PieceCode>()
-    const board = new Chess(snapshot.fen).board()
+    const board = new Chess(fen).board()
     board.forEach((rankSquares, rankIdx) => {
       rankSquares.forEach((piece, fileIdx) => {
         if (!piece) return
@@ -54,8 +56,7 @@ function ChessBoardComponent({
       })
     })
     return nextPieceMap
-  }, [snapshot.fen])
-  const lastMove = snapshot.lastMove
+  }, [fen])
 
   return (
     <div className="w-full max-w-[min(96vw,680px)] rounded-md border border-[#201d1a] bg-[#262421] p-2 shadow-[0_14px_28px_rgba(0,0,0,0.42)]">
@@ -118,6 +119,7 @@ function FragmentRow({
             key={square}
             type="button"
             onClick={() => onSquareClick(square)}
+            data-testid={`chess-square-${square}`}
             className={[
               'relative aspect-square w-full touch-manipulation select-none transition-all duration-150',
               squareTone,

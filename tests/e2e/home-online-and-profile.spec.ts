@@ -1,6 +1,24 @@
 import { test, expect } from '@playwright/test'
 
 test.describe('Home actions and profile registration', () => {
+  test('offline game starts and robot responds to move', async ({ page }) => {
+    await page.goto('/')
+    await page.getByTestId('offline-play-btn').click()
+
+    await expect(page).toHaveURL(/\/offline$/)
+    await expect(page.getByTestId('offline-status-label')).toContainText('Your turn')
+
+    await page.getByTestId('chess-square-e2').click()
+    await page.getByTestId('chess-square-e4').click()
+
+    await expect(page.getByTestId('offline-status-label')).toContainText('Robot is thinking...')
+    await expect(page.getByText('e4')).toBeVisible()
+    await expect(page.getByText('e4').first()).toBeVisible()
+
+    await expect(page.getByTestId('offline-status-label')).toContainText('Your turn', { timeout: 10000 })
+    await expect(page.locator('li')).toHaveCount(2, { timeout: 10000 })
+  })
+
   test('profile supports register, notifications, cancel request, unfriend, and online game', async ({ page, context }) => {
     const seed = Date.now()
     const userA = `testuser-a-${seed}`

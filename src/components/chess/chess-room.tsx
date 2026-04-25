@@ -488,7 +488,8 @@ export function ChessRoom() {
           <div className="flex flex-col items-center gap-4">
             <PlayerPanel snapshot={hydratedSnapshot} perspective={playerColor as PlayerColor} />
             <ChessBoard
-              snapshot={hydratedSnapshot}
+              fen={hydratedSnapshot.fen}
+              lastMove={hydratedSnapshot.lastMove}
               perspective={(session.color ?? 'white') as PlayerColor}
               selectedSquare={selectedSquare}
               highlightedMoves={moveTargets}

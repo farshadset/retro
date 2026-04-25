@@ -117,10 +117,12 @@ function CrossIcon() {
 
 function HomeContent({
   onStartOnline,
+  onStartOffline,
   onSoon,
   isStartingOnline,
 }: {
   onStartOnline: () => void
+  onStartOffline: () => void
   onSoon: () => void
   isStartingOnline: boolean
 }) {
@@ -148,7 +150,7 @@ function HomeContent({
         </button>
         <button
           type="button"
-          onClick={onSoon}
+          onClick={onStartOffline}
           data-testid="offline-play-btn"
           className="w-full rounded-xl border border-cyan-400/40 bg-cyan-500/10 px-4 py-3 text-base font-semibold text-cyan-100 transition hover:bg-cyan-500/20"
         >
@@ -935,6 +937,10 @@ export function HomeShell() {
     setBannerMessage('این گزینه در مرحله بعدی تکمیل می‌شود. فعلاً بازی آنلاین فعال است.')
   }
 
+  const handleStartOffline = () => {
+    router.push('/offline')
+  }
+
   const handleSubmitAuth = async () => {
     if (!storageReady) {
       setBannerMessage('ذخیره‌سازی پایدار حساب کاربری روی سرور فعال نیست. لطفاً به ادمین اطلاع دهید.')
@@ -1278,7 +1284,12 @@ export function HomeShell() {
           ) : null}
 
           {activeTab === 'home' ? (
-            <HomeContent onStartOnline={handleStartOnline} onSoon={handleSoon} isStartingOnline={isStartingOnline} />
+            <HomeContent
+              onStartOnline={handleStartOnline}
+              onStartOffline={handleStartOffline}
+              onSoon={handleSoon}
+              isStartingOnline={isStartingOnline}
+            />
           ) : null}
 
           {activeTab === 'profile' ? (
