@@ -10,6 +10,7 @@ type ProfileMode = 'login' | 'register'
 type FriendRelation = 'none' | 'friend' | 'incoming' | 'outgoing'
 type ProfilePanel = 'friends' | 'notifications'
 type HomePanel = 'menu' | 'friend-play'
+type NewsSection = 'news' | 'video' | 'education'
 type NotificationType =
   | 'friend_request_received'
   | 'friend_request_accepted'
@@ -817,9 +818,57 @@ function PlaceholderContent({ title }: { title: string }) {
   )
 }
 
+function NewsContent({
+  activeSection,
+  onSectionChange,
+}: {
+  activeSection: NewsSection
+  onSectionChange: (section: NewsSection) => void
+}) {
+  const tabs: Array<{ id: NewsSection; label: string }> = [
+    { id: 'news', label: 'اخبار' },
+    { id: 'video', label: 'ویدیو' },
+    { id: 'education', label: 'آموزش' },
+  ]
+
+  const sectionTitle = activeSection === 'news' ? 'اخبار' : activeSection === 'video' ? 'ویدیو' : 'آموزش'
+
+  return (
+    <section className="w-full max-w-md space-y-4 rounded-2xl border border-slate-700 bg-slate-900/70 p-5 shadow-lg">
+      <h2 className="text-center text-xl font-bold text-slate-100">اخبار</h2>
+      <div className="grid grid-cols-3 gap-2 rounded-xl bg-slate-950/60 p-1" data-testid="news-section-tabs">
+        {tabs.map((tab) => {
+          const isActive = activeSection === tab.id
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => onSectionChange(tab.id)}
+              data-testid={`news-section-tab-${tab.id}`}
+              className={[
+                'rounded-lg px-2 py-2 text-sm font-semibold transition',
+                isActive ? 'bg-cyan-400 text-slate-950' : 'text-slate-200 hover:bg-slate-800',
+              ].join(' ')}
+            >
+              {tab.label}
+            </button>
+          )
+        })}
+      </div>
+      <div className="rounded-xl border border-slate-700 bg-slate-950/70 px-4 py-5 text-center" data-testid="news-section-content">
+        <p className="text-lg font-bold text-slate-100" data-testid="news-section-title">
+          {sectionTitle}
+        </p>
+        <p className="mt-2 text-sm text-slate-400">محتوای بخش {sectionTitle} در مرحله بعدی تکمیل می‌شود.</p>
+      </div>
+    </section>
+  )
+}
+
 export function HomeShell() {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<FooterTab>('home')
+  const [activeNewsSection, setActiveNewsSection] = useState<NewsSection>('news')
   const [profileMode, setProfileMode] = useState<ProfileMode>('login')
   const [activePanel, setActivePanel] = useState<ProfilePanel>('friends')
   const [homePanel, setHomePanel] = useState<HomePanel>('menu')
@@ -1555,7 +1604,9 @@ export function HomeShell() {
           ) : null}
 
           {activeTab === 'puzzle' ? <PlaceholderContent title="پازل" /> : null}
-          {activeTab === 'news' ? <PlaceholderContent title="اخبار" /> : null}
+          {activeTab === 'news' ? (
+            <NewsContent activeSection={activeNewsSection} onSectionChange={setActiveNewsSection} />
+          ) : null}
         </div>
       </div>
 
@@ -1569,6 +1620,9 @@ export function HomeShell() {
                 type="button"
                 onClick={() => {
                   setActiveTab(item.id)
+                  if (item.id === 'news') {
+                    setActiveNewsSection('news')
+                  }
                   if (item.id !== 'home') {
                     setHomePanel('menu')
                   }

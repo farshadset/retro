@@ -96,6 +96,21 @@ test.describe('Home actions and profile registration', () => {
     await expect(page.getByTestId('personal-status-label')).toContainText('نوبت سفید')
   })
 
+  test('news tab has default اخبار and switches to ویدیو and آموزش', async ({ page }) => {
+    await page.goto('/')
+    await page.getByTestId('footer-tab-news').click()
+    await expect(page.getByTestId('news-section-tab-news')).toHaveClass(/bg-cyan-400/)
+    await expect(page.getByTestId('news-section-title')).toContainText('اخبار')
+
+    await page.getByTestId('news-section-tab-video').click()
+    await expect(page.getByTestId('news-section-tab-video')).toHaveClass(/bg-cyan-400/)
+    await expect(page.getByTestId('news-section-title')).toContainText('ویدیو')
+
+    await page.getByTestId('news-section-tab-education').click()
+    await expect(page.getByTestId('news-section-tab-education')).toHaveClass(/bg-cyan-400/)
+    await expect(page.getByTestId('news-section-title')).toContainText('آموزش')
+  })
+
   test('friend play shows friends with online indicator', async ({ page, context }) => {
     const seed = Date.now()
     const userA = `friendplay-a-${seed}`
