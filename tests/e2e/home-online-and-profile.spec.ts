@@ -1,6 +1,12 @@
 import { test, expect } from '@playwright/test'
 
 test.describe('Home actions and profile registration', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('realtime-chess-waiting-actions-delay-ms', '250')
+    })
+  })
+
   test('online time selector shows default and persists last choice', async ({ page }) => {
     await page.goto('/')
     await page.evaluate(() => localStorage.clear())
@@ -9,7 +15,7 @@ test.describe('Home actions and profile registration', () => {
     await expect(page.getByTestId('online-time-selector-btn')).toContainText('همه')
 
     await page.getByTestId('online-play-btn').click()
-    await expect(page).toHaveURL(/\/online\?room=/)
+    await expect(page).toHaveURL(/(\/online\?room=|\?room=)/)
     await expect(page.getByText(/Room\s+[A-Z0-9]+/)).toBeVisible()
     await page.evaluate(() => localStorage.removeItem('realtime-chess-session'))
     await page.goto('/')
@@ -46,7 +52,7 @@ test.describe('Home actions and profile registration', () => {
     await page.getByTestId('online-time-selector-btn').click()
     await page.getByTestId('online-time-option-15-10').click()
     await page.getByTestId('online-play-btn').click()
-    await expect(page).toHaveURL(/\/online\?room=/)
+    await expect(page).toHaveURL(/(\/online\?room=|\?room=)/)
     const firstRoomId = new URL(page.url()).searchParams.get('room')
     expect(firstRoomId).toBeTruthy()
     await expect(page.getByRole('heading', { name: 'Waiting for opponent' })).toBeVisible()
@@ -65,6 +71,19 @@ test.describe('Home actions and profile registration', () => {
     expect(secondRoomId).toBeTruthy()
     await expect(secondPage.getByRole('heading', { name: /Waiting for opponent|In progress/ })).toBeVisible()
     await secondContext.close()
+  })
+
+  test('waiting actions panel appears and retry/share options are shown', async ({ page }) => {
+    await page.goto('/online')
+    await page.getByRole('button', { name: 'Create room' }).click()
+    await page.getByLabel('Player name').fill('waiting-user')
+    await page.getByRole('button', { name: 'Create and play' }).click()
+
+    await expect(page).toHaveURL(/(\/online\?room=|\?room=)/)
+    await expect(page.getByRole('heading', { name: 'Waiting for opponent' })).toBeVisible()
+    await expect(page.getByTestId('waiting-actions-panel')).toBeVisible({ timeout: 4000 })
+    await expect(page.getByTestId('waiting-retry-btn')).toBeVisible()
+    await expect(page.getByTestId('waiting-share-btn')).toBeVisible()
   })
 
   test('home shows bot and personal options', async ({ page }) => {

@@ -39,6 +39,7 @@ export async function createRoom(input: {
   incrementSeconds: number
   quickMatch?: boolean
   matchAnyTimeControl?: boolean
+  excludeRoomId?: string
 }): Promise<SessionResponse> {
   const response = await fetch(apiUrl('/api/chess/rooms'), {
     method: 'POST',

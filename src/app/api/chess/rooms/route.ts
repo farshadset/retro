@@ -7,6 +7,7 @@ interface CreateRoomBody {
   incrementSeconds?: number
   quickMatch?: boolean
   matchAnyTimeControl?: boolean
+  excludeRoomId?: string
 }
 
 export async function POST(request: Request): Promise<Response> {
@@ -16,6 +17,7 @@ export async function POST(request: Request): Promise<Response> {
     const incrementSeconds = Number(body.incrementSeconds ?? 2)
     const quickMatch = Boolean(body.quickMatch)
     const matchAnyTimeControl = Boolean(body.matchAnyTimeControl)
+    const excludeRoomId = (body.excludeRoomId ?? '').trim()
 
     if (!Number.isFinite(minutes) || minutes < 1 || minutes > 60) {
       return jsonResponse(
@@ -37,6 +39,7 @@ export async function POST(request: Request): Promise<Response> {
           timeControlMs: Math.floor(minutes * 60_000),
           incrementMs: Math.floor(incrementSeconds * 1_000),
           matchAnyTimeControl,
+          excludeRoomId: excludeRoomId || undefined,
         })
       : store.createRoom({
           name: body.name ?? '',

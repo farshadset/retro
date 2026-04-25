@@ -92,10 +92,15 @@ export class RoomStore {
     timeControlMs: number
     incrementMs: number
     matchAnyTimeControl: boolean
+    excludeRoomId?: string
   }): RoomState | null {
+    const excludedRoomId = input.excludeRoomId?.trim().toUpperCase()
     const waitingRooms = Array.from(this.rooms.values())
       .filter((room) => {
         if (room.status !== 'waiting' || room.players.black) {
+          return false
+        }
+        if (excludedRoomId && room.id === excludedRoomId) {
           return false
         }
         if (input.matchAnyTimeControl) {
@@ -279,6 +284,7 @@ export class RoomStore {
     timeControlMs: number
     incrementMs: number
     matchAnyTimeControl: boolean
+    excludeRoomId?: string
   }): {
     snapshot: RoomSnapshot
     session: SessionRecord
@@ -294,6 +300,7 @@ export class RoomStore {
       timeControlMs: input.timeControlMs,
       incrementMs: input.incrementMs,
       matchAnyTimeControl: input.matchAnyTimeControl,
+      excludeRoomId: input.excludeRoomId,
     })
 
     if (!waitingRoom) {

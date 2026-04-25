@@ -39,6 +39,8 @@ const PROMOTION_PIECE_IMAGE: Record<PlayerColor, Record<PromotionPiece, string>>
 }
 
 const SESSION_STORAGE_KEY = 'realtime-chess-session'
+const WAITING_ACTIONS_DELAY_MS = 15_000
+const WAITING_ACTIONS_DELAY_STORAGE_KEY = 'realtime-chess-waiting-actions-delay-ms'
 
 function statusLabel(status: RoomStatus): string {
   switch (status) {
@@ -92,6 +94,9 @@ export function ChessRoom() {
   const [moveTargets, setMoveTargets] = useState<Square[]>([])
   const [isMakingMove, setIsMakingMove] = useState(false)
   const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null)
+  const [showWaitingActions, setShowWaitingActions] = useState(false)
+  const [waitingActionsDelayMs, setWaitingActionsDelayMs] = useState(WAITING_ACTIONS_DELAY_MS)
+  const [isRetryingMatch, setIsRetryingMatch] = useState(false)
   const [nowTick, setNowTick] = useState(Date.now())
   const eventSourceRef = useRef<EventSource | null>(null)
   const clockIntervalRef = useRef<number | null>(null)
@@ -223,6 +228,15 @@ export function ChessRoom() {
   )
 
   useEffect(() => {
+    const rawDelay = localStorage.getItem(WAITING_ACTIONS_DELAY_STORAGE_KEY)?.trim()
+    if (!rawDelay) return
+    const parsedDelay = Number(rawDelay)
+    if (Number.isFinite(parsedDelay) && parsedDelay >= 250 && parsedDelay <= 120_000) {
+      setWaitingActionsDelayMs(Math.floor(parsedDelay))
+    }
+  }, [])
+
+  useEffect(() => {
     const roomIdFromQuery = normalizeRoomId(new URLSearchParams(window.location.search).get('room') ?? '')
     if (roomIdFromQuery) {
       setRoomInput(roomIdFromQuery)
@@ -255,6 +269,27 @@ export function ChessRoom() {
     clearSelection()
     setPendingPromotion(null)
   }, [snapshot?.fen, clearSelection])
+
+  useEffect(() => {
+    if (!snapshot || !session || session.color !== 'white' || snapshot.status !== 'waiting') {
+      setShowWaitingActions(false)
+      return
+    }
+
+    const elapsedMs = Math.max(0, Date.now() - snapshot.createdAt)
+    const remainingMs = Math.max(0, waitingActionsDelayMs - elapsedMs)
+    if (remainingMs === 0) {
+      setShowWaitingActions(true)
+      return
+    }
+
+    setShowWaitingActions(false)
+    const timeout = window.setTimeout(() => {
+      setShowWaitingActions(true)
+    }, remainingMs)
+
+    return () => window.clearTimeout(timeout)
+  }, [session, snapshot, waitingActionsDelayMs])
 
   const handleCreateRoom = async () => {
     if (name.trim().length < 2) {
@@ -383,6 +418,51 @@ export function ChessRoom() {
       setError(cause instanceof Error ? cause.message : 'Could not resign.')
     } finally {
       setIsSubmitting(false)
+    }
+  }
+
+  const handleRetryMatch = async () => {
+    if (!snapshot || !session || session.color !== 'white' || snapshot.status !== 'waiting') {
+      return
+    }
+    setIsRetryingMatch(true)
+    setError(null)
+    try {
+      const response = await createRoom({
+        name: session.name,
+        timeControlMinutes: Math.max(1, Math.round(snapshot.timeControlMs / 60_000)),
+        incrementSeconds: Math.max(0, Math.round(snapshot.incrementMs / 1_000)),
+        quickMatch: true,
+        matchAnyTimeControl: true,
+        excludeRoomId: snapshot.roomId,
+      })
+      window.history.replaceState({}, '', `/online?room=${response.snapshot.roomId}`)
+      enterGame(response.snapshot, response.session)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not retry matchmaking.')
+    } finally {
+      setIsRetryingMatch(false)
+    }
+  }
+
+  const handleShareRoom = async () => {
+    if (!hydratedSnapshot) return
+    try {
+      if (typeof navigator.share === 'function') {
+        await navigator.share({
+          title: 'Chess room',
+          text: 'برای بازی آنلاین شطرنج با من وارد این لینک شو.',
+          url: roomShareUrl,
+        })
+        return
+      }
+      await navigator.clipboard.writeText(roomShareUrl)
+    } catch (cause) {
+      const shareError = cause as { name?: string } | undefined
+      if (shareError?.name === 'AbortError') {
+        return
+      }
+      setError('Could not share room link.')
     }
   }
 
@@ -566,6 +646,35 @@ export function ChessRoom() {
                     : 'Game finished'
                 : 'Spectator mode'}
             </p>
+            {showWaitingActions ? (
+              <section
+                className="w-full max-w-[min(96vw,680px)] rounded-md border border-[#3a3734] bg-[#262421] p-3"
+                data-testid="waiting-actions-panel"
+              >
+                <p className="mb-3 text-sm text-[#dcd6ce]" data-testid="waiting-actions-text">
+                  هنوز حریفی پیدا نشده. می‌تونی دوباره تلاش کنی یا لینک اتاقت رو برای دوستت بفرستی.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleRetryMatch()}
+                    disabled={isRetryingMatch}
+                    data-testid="waiting-retry-btn"
+                    className="rounded-md border border-cyan-400/40 bg-cyan-500/10 px-3 py-2 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isRetryingMatch ? 'در حال تلاش...' : 'تلاش مجدد'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleShareRoom()}
+                    data-testid="waiting-share-btn"
+                    className="rounded-md border border-emerald-400/40 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-500/20"
+                  >
+                    اشتراک‌گذاری لینک
+                  </button>
+                </div>
+              </section>
+            ) : null}
             {pendingPromotion ? (
               <section className="w-full max-w-[min(96vw,680px)] rounded-md border border-[#3a3734] bg-[#262421] p-3">
                 <p className="mb-3 text-sm font-semibold text-[#f3efe8]" data-testid="promotion-picker-title">
