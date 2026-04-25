@@ -142,7 +142,8 @@ function CrossIcon() {
 function HomeContent({
   onStartOnline,
   onOpenFriendPlay,
-  onStartOffline,
+  onStartBotGame,
+  onStartPersonalGame,
   onBackToMenu,
   onToggleTimeControlOptions,
   onSelectTimeControl,
@@ -155,7 +156,8 @@ function HomeContent({
 }: {
   onStartOnline: () => void
   onOpenFriendPlay: () => void
-  onStartOffline: () => void
+  onStartBotGame: () => void
+  onStartPersonalGame: () => void
   onBackToMenu: () => void
   onToggleTimeControlOptions: () => void
   onSelectTimeControl: (optionId: string) => void
@@ -268,11 +270,19 @@ function HomeContent({
         </button>
         <button
           type="button"
-          onClick={onStartOffline}
+          onClick={onStartBotGame}
           data-testid="offline-play-btn"
           className="w-full rounded-xl border border-cyan-400/40 bg-cyan-500/10 px-4 py-3 text-base font-semibold text-cyan-100 transition hover:bg-cyan-500/20"
         >
-          بازی آفلاین
+          بازی با بات
+        </button>
+        <button
+          type="button"
+          onClick={onStartPersonalGame}
+          data-testid="personal-play-btn"
+          className="w-full rounded-xl border border-cyan-400/40 bg-cyan-500/10 px-4 py-3 text-base font-semibold text-cyan-100 transition hover:bg-cyan-500/20"
+        >
+          بازی شخصی
         </button>
       </div>
     </section>
@@ -1090,8 +1100,12 @@ export function HomeShell() {
     }
   }
 
-  const handleStartOffline = () => {
+  const handleStartBotGame = () => {
     router.push('/offline')
+  }
+
+  const handleStartPersonalGame = () => {
+    router.push('/personal')
   }
 
   const handleOpenFriendPlay = () => {
@@ -1472,7 +1486,8 @@ export function HomeShell() {
             <HomeContent
               onStartOnline={handleStartOnline}
               onOpenFriendPlay={handleOpenFriendPlay}
-              onStartOffline={handleStartOffline}
+              onStartBotGame={handleStartBotGame}
+              onStartPersonalGame={handleStartPersonalGame}
               onBackToMenu={handleBackToHomeMenu}
               onToggleTimeControlOptions={handleToggleTimeControlOptions}
               onSelectTimeControl={handleSelectTimeControl}

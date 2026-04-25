@@ -19,6 +19,16 @@ test.describe('Home actions and profile registration', () => {
     await expect(page.getByTestId('online-time-selector-btn')).toContainText('Blitz • 3+2')
   })
 
+  test('home shows bot and personal options', async ({ page }) => {
+    await page.goto('/')
+    await expect(page.getByTestId('offline-play-btn')).toContainText('بازی با بات')
+    await expect(page.getByTestId('personal-play-btn')).toContainText('بازی شخصی')
+
+    await page.getByTestId('personal-play-btn').click()
+    await expect(page).toHaveURL(/\/personal$/)
+    await expect(page.getByTestId('personal-status-label')).toContainText('نوبت سفید')
+  })
+
   test('friend play shows friends with online indicator', async ({ page, context }) => {
     const seed = Date.now()
     const userA = `friendplay-a-${seed}`
