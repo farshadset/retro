@@ -185,7 +185,7 @@ export function OfflineChessRoom() {
       setPendingPromotion({
         from: selectedSquare,
         to: square,
-        color: turnColor,
+        color: chessState.turn(),
         options: uniquePromotionOptions,
       })
       return
