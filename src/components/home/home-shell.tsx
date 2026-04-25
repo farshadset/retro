@@ -1,15 +1,27 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createRoom } from '@/lib/chess/client'
 import { PROFILE_USERNAME_STORAGE_KEY } from '@/lib/profile/constants'
 
 type FooterTab = 'home' | 'profile' | 'puzzle' | 'news'
+type ProfileMode = 'login' | 'register'
+type FriendRelation = 'none' | 'friend' | 'incoming' | 'outgoing'
 
 interface FooterItem {
   id: FooterTab
   label: string
+}
+
+interface ApiResponse {
+  user?: { username: string }
+  friends?: string[]
+  incomingRequests?: string[]
+  outgoingRequests?: string[]
+  incomingCount?: number
+  users?: Array<{ username: string; relation: FriendRelation }>
+  error?: { code?: string; message?: string }
 }
 
 const FOOTER_ITEMS: FooterItem[] = [
@@ -19,14 +31,9 @@ const FOOTER_ITEMS: FooterItem[] = [
   { id: 'news', label: 'اخبار' },
 ]
 
-type RegisterResponse = {
-  user?: { username: string }
-  error?: { message?: string }
-}
-
-async function parseJsonSafe(response: Response): Promise<RegisterResponse> {
+async function parseJsonSafe(response: Response): Promise<ApiResponse> {
   try {
-    return (await response.json()) as RegisterResponse
+    return (await response.json()) as ApiResponse
   } catch {
     return {}
   }
@@ -39,6 +46,30 @@ function PencilIcon() {
         d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25Zm17.71-10.04a1.003 1.003 0 0 0 0-1.42l-2.5-2.5a1.003 1.003 0 0 0-1.42 0l-1.96 1.96 3.75 3.75 2.13-2.79Z"
         fill="currentColor"
       />
+    </svg>
+  )
+}
+
+function PlusIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4">
+      <path d="M19 11H13V5h-2v6H5v2h6v6h2v-6h6z" fill="currentColor" />
+    </svg>
+  )
+}
+
+function CheckIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4">
+      <path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z" fill="currentColor" />
+    </svg>
+  )
+}
+
+function CrossIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4">
+      <path d="m19 6.4-1.4-1.4L12 10.6 6.4 5 5 6.4l5.6 5.6L5 17.6 6.4 19l5.6-5.6 5.6 5.6 1.4-1.4-5.6-5.6z" fill="currentColor" />
     </svg>
   )
 }
@@ -87,39 +118,19 @@ function HomeContent({
   )
 }
 
-function ProfileContent({
-  isAuthenticated,
-  mode,
-  onModeChange,
-  profileName,
-  draftName,
-  password,
-  confirmPassword,
-  usernameEditValue,
-  onUsernameEditValueChange,
-  isEditingUsername,
-  onToggleUsernameEdit,
-  onSaveUsername,
-  currentPassword,
-  onCurrentPasswordChange,
-  newPassword,
-  onNewPasswordChange,
-  confirmNewPassword,
-  onConfirmNewPasswordChange,
-  onChangePassword,
-  onDraftNameChange,
-  onPasswordChange,
-  onConfirmPasswordChange,
-  onSubmit,
-  isSubmitting,
-}: {
+interface ProfileContentProps {
   isAuthenticated: boolean
-  mode: 'login' | 'register'
-  onModeChange: (mode: 'login' | 'register') => void
+  mode: ProfileMode
+  onModeChange: (mode: ProfileMode) => void
   profileName: string
   draftName: string
   password: string
   confirmPassword: string
+  onDraftNameChange: (value: string) => void
+  onPasswordChange: (value: string) => void
+  onConfirmPasswordChange: (value: string) => void
+  onSubmit: () => void
+  isSubmitting: boolean
   usernameEditValue: string
   onUsernameEditValueChange: (value: string) => void
   isEditingUsername: boolean
@@ -132,18 +143,63 @@ function ProfileContent({
   confirmNewPassword: string
   onConfirmNewPasswordChange: (value: string) => void
   onChangePassword: () => void
-  onDraftNameChange: (value: string) => void
-  onPasswordChange: (value: string) => void
-  onConfirmPasswordChange: (value: string) => void
-  onSubmit: () => void
-  isSubmitting: boolean
-}) {
+  friends: string[]
+  incomingRequests: string[]
+  outgoingRequests: string[]
+  incomingRequestCount: number
+  friendSearchQuery: string
+  onFriendSearchQueryChange: (value: string) => void
+  friendSearchResults: Array<{ username: string; relation: FriendRelation }>
+  onSendFriendRequest: (targetUsername: string) => void
+  onRespondFriendRequest: (fromUsername: string, action: 'accept' | 'reject') => void
+  friendsLoading: boolean
+}
+
+function ProfileContent(props: ProfileContentProps) {
+  const {
+    isAuthenticated,
+    mode,
+    onModeChange,
+    profileName,
+    draftName,
+    password,
+    confirmPassword,
+    onDraftNameChange,
+    onPasswordChange,
+    onConfirmPasswordChange,
+    onSubmit,
+    isSubmitting,
+    usernameEditValue,
+    onUsernameEditValueChange,
+    isEditingUsername,
+    onToggleUsernameEdit,
+    onSaveUsername,
+    currentPassword,
+    onCurrentPasswordChange,
+    newPassword,
+    onNewPasswordChange,
+    confirmNewPassword,
+    onConfirmNewPasswordChange,
+    onChangePassword,
+    friends,
+    incomingRequests,
+    outgoingRequests,
+    incomingRequestCount,
+    friendSearchQuery,
+    onFriendSearchQueryChange,
+    friendSearchResults,
+    onSendFriendRequest,
+    onRespondFriendRequest,
+    friendsLoading,
+  } = props
+
   const isRegisterMode = mode === 'register'
 
   if (isAuthenticated) {
     return (
       <section className="w-full max-w-md space-y-4 rounded-2xl border border-slate-700 bg-slate-900/70 p-5 shadow-lg">
         <h2 className="text-center text-xl font-bold text-slate-100">پروفایل من</h2>
+
         <div className="space-y-2 rounded-xl border border-slate-700 bg-slate-950/70 p-4">
           <p className="text-xs text-slate-400">نام کاربری</p>
           <div className="flex items-center gap-2">
@@ -226,6 +282,142 @@ function ProfileContent({
           >
             تغییر رمز عبور
           </button>
+        </div>
+
+        <div className="space-y-3 rounded-xl border border-slate-700 bg-slate-950/70 p-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold text-slate-200">دوستان</p>
+            {incomingRequestCount > 0 ? (
+              <span
+                data-testid="friends-incoming-count"
+                className="rounded-full bg-rose-500/20 px-2 py-0.5 text-xs font-semibold text-rose-200"
+              >
+                {incomingRequestCount} درخواست جدید
+              </span>
+            ) : null}
+          </div>
+
+          <label className="block space-y-2">
+            <span className="text-xs text-slate-400">جستجوی کاربران</span>
+            <input
+              value={friendSearchQuery}
+              onChange={(event) => onFriendSearchQueryChange(event.target.value)}
+              data-testid="friends-search-input"
+              className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none ring-cyan-400 transition focus:ring-2"
+              placeholder="نام کاربری دوستت را جستجو کن"
+            />
+          </label>
+
+          {friendSearchQuery.trim().length >= 2 ? (
+            <div className="space-y-2 rounded-lg border border-slate-700 bg-slate-900/70 p-2">
+              {friendSearchResults.length === 0 ? (
+                <p className="text-xs text-slate-400" data-testid="friends-search-empty">
+                  کاربری پیدا نشد.
+                </p>
+              ) : (
+                friendSearchResults.map((result) => (
+                  <div
+                    key={result.username}
+                    className="flex items-center justify-between rounded-md border border-slate-700 px-2 py-1.5"
+                    data-testid={`friends-search-row-${result.username}`}
+                  >
+                    <p className="text-sm text-slate-100">{result.username}</p>
+                    {result.relation === 'none' ? (
+                      <button
+                        type="button"
+                        onClick={() => onSendFriendRequest(result.username)}
+                        disabled={friendsLoading}
+                        data-testid={`friends-send-request-${result.username}`}
+                        className="inline-flex items-center justify-center rounded-md bg-emerald-500 p-1.5 text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+                        aria-label={`ارسال درخواست دوستی برای ${result.username}`}
+                      >
+                        <PlusIcon />
+                      </button>
+                    ) : (
+                      <span className="text-xs text-slate-300">
+                        {result.relation === 'friend'
+                          ? 'دوست'
+                          : result.relation === 'incoming'
+                            ? 'درخواست از او'
+                            : 'درخواست ارسال شده'}
+                      </span>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          ) : null}
+
+          <div className="space-y-2">
+            <p className="text-xs text-slate-400">درخواست‌های دریافتی</p>
+            {incomingRequests.length === 0 ? (
+              <p className="text-xs text-slate-500" data-testid="friends-incoming-empty">
+                فعلاً درخواستی نداری.
+              </p>
+            ) : (
+              incomingRequests.map((requester) => (
+                <div
+                  key={requester}
+                  className="flex items-center justify-between rounded-md border border-slate-700 px-2 py-1.5"
+                  data-testid={`friends-incoming-row-${requester}`}
+                >
+                  <p className="text-sm text-slate-100">{requester} درخواست دوستی ارسال کرده است.</p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onRespondFriendRequest(requester, 'accept')}
+                      disabled={friendsLoading}
+                      data-testid={`friends-accept-${requester}`}
+                      className="inline-flex items-center justify-center rounded-md bg-emerald-500 p-1.5 text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+                      aria-label={`تایید درخواست ${requester}`}
+                    >
+                      <CheckIcon />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onRespondFriendRequest(requester, 'reject')}
+                      disabled={friendsLoading}
+                      data-testid={`friends-reject-${requester}`}
+                      className="inline-flex items-center justify-center rounded-md bg-rose-500 p-1.5 text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+                      aria-label={`رد درخواست ${requester}`}
+                    >
+                      <CrossIcon />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-xs text-slate-400">لیست دوستان</p>
+            {friends.length === 0 ? (
+              <p className="text-xs text-slate-500" data-testid="friends-list-empty">
+                هنوز دوستی اضافه نشده است.
+              </p>
+            ) : (
+              <ul className="space-y-1" data-testid="friends-list">
+                {friends.map((friend) => (
+                  <li key={friend} className="rounded-md border border-slate-700 px-2 py-1.5 text-sm text-slate-100">
+                    {friend}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {outgoingRequests.length > 0 ? (
+            <div className="space-y-2">
+              <p className="text-xs text-slate-400">درخواست‌های ارسالی شما</p>
+              <div className="space-y-1">
+                {outgoingRequests.map((target) => (
+                  <p key={target} className="text-xs text-slate-300">
+                    {target}
+                  </p>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
       </section>
     )
@@ -325,7 +517,7 @@ function PlaceholderContent({ title }: { title: string }) {
 export function HomeShell() {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<FooterTab>('home')
-  const [profileMode, setProfileMode] = useState<'login' | 'register'>('login')
+  const [profileMode, setProfileMode] = useState<ProfileMode>('login')
   const [profileName, setProfileName] = useState('')
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [draftName, setDraftName] = useState('')
@@ -336,18 +528,144 @@ export function HomeShell() {
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmNewPassword, setConfirmNewPassword] = useState('')
+  const [friends, setFriends] = useState<string[]>([])
+  const [incomingRequests, setIncomingRequests] = useState<string[]>([])
+  const [outgoingRequests, setOutgoingRequests] = useState<string[]>([])
+  const [incomingRequestCount, setIncomingRequestCount] = useState(0)
+  const [friendSearchQuery, setFriendSearchQuery] = useState('')
+  const [friendSearchResults, setFriendSearchResults] = useState<Array<{ username: string; relation: FriendRelation }>>([])
+  const [friendsLoading, setFriendsLoading] = useState(false)
   const [bannerMessage, setBannerMessage] = useState<string | null>(null)
   const [isStartingOnline, setIsStartingOnline] = useState(false)
-  const [isRegistering, setIsRegistering] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const clearAuthState = useCallback((message?: string) => {
+    localStorage.removeItem(PROFILE_USERNAME_STORAGE_KEY)
+    setIsAuthenticated(false)
+    setProfileName('')
+    setDraftName('')
+    setUsernameEditValue('')
+    setIsEditingUsername(false)
+    setFriends([])
+    setIncomingRequests([])
+    setOutgoingRequests([])
+    setIncomingRequestCount(0)
+    setFriendSearchQuery('')
+    setFriendSearchResults([])
+    if (message) {
+      setBannerMessage(message)
+    }
+  }, [])
+
+  const loadFriendsOverview = useCallback(async (username: string, silent = false): Promise<boolean> => {
+    const normalized = username.trim()
+    if (!normalized) {
+      return false
+    }
+
+    try {
+      const response = await fetch(`/api/profile/friends?username=${encodeURIComponent(normalized)}`)
+      const payload = await parseJsonSafe(response)
+      if (!response.ok) {
+        if (payload.error?.code === 'USER_NOT_FOUND') {
+          clearAuthState('برای ادامه دوباره وارد حساب کاربری شوید.')
+          return false
+        }
+        if (!silent) {
+          setBannerMessage(payload.error?.message ?? 'دریافت لیست دوستان انجام نشد.')
+        }
+        return false
+      }
+
+      setFriends(payload.friends ?? [])
+      setIncomingRequests(payload.incomingRequests ?? [])
+      setOutgoingRequests(payload.outgoingRequests ?? [])
+      setIncomingRequestCount(payload.incomingCount ?? 0)
+      return true
+    } catch {
+      if (!silent) {
+        setBannerMessage('خطا در دریافت اطلاعات دوستان.')
+      }
+      return false
+    }
+  }, [clearAuthState])
+
+  const searchUsers = useCallback(async (username: string, query: string, signal?: AbortSignal): Promise<boolean> => {
+    const normalizedUsername = username.trim()
+    const normalizedQuery = query.trim()
+    if (!normalizedUsername || normalizedQuery.length < 2) {
+      setFriendSearchResults([])
+      return false
+    }
+
+    try {
+      const response = await fetch(
+        `/api/profile/friends/search?username=${encodeURIComponent(normalizedUsername)}&query=${encodeURIComponent(normalizedQuery)}`,
+        { signal }
+      )
+      const payload = await parseJsonSafe(response)
+      if (!response.ok) {
+        setBannerMessage(payload.error?.message ?? 'جستجوی کاربران انجام نشد.')
+        return false
+      }
+
+      setFriendSearchResults(payload.users ?? [])
+      return true
+    } catch {
+      return false
+    }
+  }, [])
 
   useEffect(() => {
     const stored = localStorage.getItem(PROFILE_USERNAME_STORAGE_KEY)?.trim() ?? ''
-    if (!stored) return
+    if (!stored) {
+      return
+    }
     setProfileName(stored)
     setUsernameEditValue(stored)
     setDraftName(stored)
     setIsAuthenticated(true)
   }, [])
+
+  useEffect(() => {
+    if (!isAuthenticated || !profileName.trim()) {
+      setFriends([])
+      setIncomingRequests([])
+      setOutgoingRequests([])
+      setIncomingRequestCount(0)
+      return
+    }
+    void loadFriendsOverview(profileName, true)
+  }, [isAuthenticated, loadFriendsOverview, profileName])
+
+  useEffect(() => {
+    if (!isAuthenticated || !profileName.trim()) {
+      return
+    }
+
+    const interval = setInterval(() => {
+      void loadFriendsOverview(profileName, true)
+    }, 3000)
+
+    return () => clearInterval(interval)
+  }, [isAuthenticated, loadFriendsOverview, profileName])
+
+  useEffect(() => {
+    if (!isAuthenticated || !profileName.trim() || friendSearchQuery.trim().length < 2) {
+      setFriendSearchResults([])
+      return
+    }
+
+    const controller = new AbortController()
+    const timeout = setTimeout(() => {
+      void searchUsers(profileName, friendSearchQuery, controller.signal)
+    }, 250)
+
+    return () => {
+      clearTimeout(timeout)
+      controller.abort()
+    }
+  }, [friendSearchQuery, isAuthenticated, profileName, searchUsers])
 
   const handleStartOnline = async () => {
     const preferredName = profileName.trim() || 'Guest'
@@ -376,7 +694,7 @@ export function HomeShell() {
     setBannerMessage('این گزینه در مرحله بعدی تکمیل می‌شود. فعلاً بازی آنلاین فعال است.')
   }
 
-  const handleSaveProfile = async () => {
+  const handleSubmitAuth = async () => {
     const normalized = draftName.trim()
     if (normalized.length < 3) {
       setBannerMessage('نام اکانت باید حداقل ۳ کاراکتر باشد.')
@@ -391,7 +709,7 @@ export function HomeShell() {
       return
     }
 
-    setIsRegistering(true)
+    setIsSubmitting(true)
     setBannerMessage(null)
     try {
       const endpoint = profileMode === 'register' ? '/api/profile/register' : '/api/profile/login'
@@ -400,15 +718,8 @@ export function HomeShell() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(
           profileMode === 'register'
-            ? {
-                username: normalized,
-                password,
-                confirmPassword,
-              }
-            : {
-                username: normalized,
-                password,
-              }
+            ? { username: normalized, password, confirmPassword }
+            : { username: normalized, password }
         ),
       })
       const payload = await parseJsonSafe(response)
@@ -420,17 +731,20 @@ export function HomeShell() {
       const savedName = payload.user?.username ?? normalized
       localStorage.setItem(PROFILE_USERNAME_STORAGE_KEY, savedName)
       setProfileName(savedName)
-      setUsernameEditValue(savedName)
       setDraftName(savedName)
+      setUsernameEditValue(savedName)
       setIsAuthenticated(true)
       setActiveTab('profile')
       setPassword('')
       setConfirmPassword('')
+      setFriendSearchQuery('')
+      setFriendSearchResults([])
+      await loadFriendsOverview(savedName, true)
       setBannerMessage(profileMode === 'register' ? 'ثبت نام با موفقیت انجام شد.' : 'ورود با موفقیت انجام شد.')
     } catch {
       setBannerMessage('خطا در ارتباط با سرور پروفایل.')
     } finally {
-      setIsRegistering(false)
+      setIsSubmitting(false)
     }
   }
 
@@ -438,16 +752,16 @@ export function HomeShell() {
     const currentUsername = profileName.trim()
     const newUsername = usernameEditValue.trim()
 
-    if (newUsername.length < 3) {
-      setBannerMessage('نام کاربری باید حداقل ۳ کاراکتر باشد.')
-      return
-    }
     if (!currentUsername) {
       setBannerMessage('ابتدا وارد حساب کاربری شوید.')
       return
     }
+    if (newUsername.length < 3) {
+      setBannerMessage('نام کاربری باید حداقل ۳ کاراکتر باشد.')
+      return
+    }
 
-    setIsRegistering(true)
+    setIsSubmitting(true)
     setBannerMessage(null)
     try {
       const response = await fetch('/api/profile/update-username', {
@@ -467,14 +781,17 @@ export function HomeShell() {
       const savedName = payload.user?.username ?? newUsername
       localStorage.setItem(PROFILE_USERNAME_STORAGE_KEY, savedName)
       setProfileName(savedName)
-      setUsernameEditValue(savedName)
       setDraftName(savedName)
+      setUsernameEditValue(savedName)
       setIsEditingUsername(false)
+      setFriendSearchQuery('')
+      setFriendSearchResults([])
+      await loadFriendsOverview(savedName, true)
       setBannerMessage('نام کاربری با موفقیت تغییر کرد.')
     } catch {
       setBannerMessage('خطا در ارتباط با سرور پروفایل.')
     } finally {
-      setIsRegistering(false)
+      setIsSubmitting(false)
     }
   }
 
@@ -496,7 +813,7 @@ export function HomeShell() {
       return
     }
 
-    setIsRegistering(true)
+    setIsSubmitting(true)
     setBannerMessage(null)
     try {
       const response = await fetch('/api/profile/change-password', {
@@ -522,7 +839,76 @@ export function HomeShell() {
     } catch {
       setBannerMessage('خطا در ارتباط با سرور پروفایل.')
     } finally {
-      setIsRegistering(false)
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleSendFriendRequest = async (targetUsername: string) => {
+    const fromUsername = profileName.trim()
+    if (!fromUsername) {
+      setBannerMessage('ابتدا وارد حساب کاربری شوید.')
+      return
+    }
+
+    setFriendsLoading(true)
+    setBannerMessage(null)
+    try {
+      const response = await fetch('/api/profile/friends/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fromUsername,
+          toUsername: targetUsername,
+        }),
+      })
+      const payload = await parseJsonSafe(response)
+      if (!response.ok) {
+        setBannerMessage(payload.error?.message ?? 'ارسال درخواست دوستی انجام نشد.')
+        return
+      }
+
+      await loadFriendsOverview(fromUsername, true)
+      await searchUsers(fromUsername, friendSearchQuery)
+      setBannerMessage(`درخواست دوستی برای ${targetUsername} ارسال شد.`)
+    } catch {
+      setBannerMessage('خطا در ارسال درخواست دوستی.')
+    } finally {
+      setFriendsLoading(false)
+    }
+  }
+
+  const handleRespondFriendRequest = async (fromUsername: string, action: 'accept' | 'reject') => {
+    const username = profileName.trim()
+    if (!username) {
+      setBannerMessage('ابتدا وارد حساب کاربری شوید.')
+      return
+    }
+
+    setFriendsLoading(true)
+    setBannerMessage(null)
+    try {
+      const response = await fetch('/api/profile/friends/respond', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username,
+          fromUsername,
+          action,
+        }),
+      })
+      const payload = await parseJsonSafe(response)
+      if (!response.ok) {
+        setBannerMessage(payload.error?.message ?? 'پاسخ به درخواست دوستی انجام نشد.')
+        return
+      }
+
+      await loadFriendsOverview(username, true)
+      await searchUsers(username, friendSearchQuery)
+      setBannerMessage(action === 'accept' ? `درخواست ${fromUsername} تایید شد.` : `درخواست ${fromUsername} رد شد.`)
+    } catch {
+      setBannerMessage('خطا در ثبت پاسخ درخواست دوستی.')
+    } finally {
+      setFriendsLoading(false)
     }
   }
 
@@ -535,13 +921,11 @@ export function HomeShell() {
               {bannerMessage}
             </p>
           ) : null}
+
           {activeTab === 'home' ? (
-            <HomeContent
-              onStartOnline={handleStartOnline}
-              onSoon={handleSoon}
-              isStartingOnline={isStartingOnline}
-            />
+            <HomeContent onStartOnline={handleStartOnline} onSoon={handleSoon} isStartingOnline={isStartingOnline} />
           ) : null}
+
           {activeTab === 'profile' ? (
             <ProfileContent
               isAuthenticated={isAuthenticated}
@@ -554,6 +938,13 @@ export function HomeShell() {
               }}
               profileName={profileName}
               draftName={draftName}
+              password={password}
+              confirmPassword={confirmPassword}
+              onDraftNameChange={setDraftName}
+              onPasswordChange={setPassword}
+              onConfirmPasswordChange={setConfirmPassword}
+              onSubmit={handleSubmitAuth}
+              isSubmitting={isSubmitting}
               usernameEditValue={usernameEditValue}
               onUsernameEditValueChange={setUsernameEditValue}
               isEditingUsername={isEditingUsername}
@@ -569,15 +960,19 @@ export function HomeShell() {
               confirmNewPassword={confirmNewPassword}
               onConfirmNewPasswordChange={setConfirmNewPassword}
               onChangePassword={handleChangePassword}
-              onDraftNameChange={setDraftName}
-              onSubmit={handleSaveProfile}
-              password={password}
-              confirmPassword={confirmPassword}
-              onPasswordChange={setPassword}
-              onConfirmPasswordChange={setConfirmPassword}
-              isSubmitting={isRegistering}
+              friends={friends}
+              incomingRequests={incomingRequests}
+              outgoingRequests={outgoingRequests}
+              incomingRequestCount={incomingRequestCount}
+              friendSearchQuery={friendSearchQuery}
+              onFriendSearchQueryChange={setFriendSearchQuery}
+              friendSearchResults={friendSearchResults}
+              onSendFriendRequest={handleSendFriendRequest}
+              onRespondFriendRequest={handleRespondFriendRequest}
+              friendsLoading={friendsLoading}
             />
           ) : null}
+
           {activeTab === 'puzzle' ? <PlaceholderContent title="پازل" /> : null}
           {activeTab === 'news' ? <PlaceholderContent title="اخبار" /> : null}
         </div>
