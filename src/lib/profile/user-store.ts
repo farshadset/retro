@@ -74,6 +74,82 @@ class UserStore {
 
     return { username: user.username }
   }
+
+  updateUsername(input: { currentUsername: string; newUsername: string }): { username: string } {
+    const currentUsername = input.currentUsername.trim()
+    const newUsername = input.newUsername.trim()
+
+    if (!currentUsername) {
+      throw new ProfileApiError(400, 'INVALID_USERNAME', 'نام کاربری فعلی الزامی است.')
+    }
+    if (newUsername.length < 3) {
+      throw new ProfileApiError(400, 'INVALID_USERNAME', 'نام کاربری جدید باید حداقل ۳ کاراکتر باشد.')
+    }
+
+    const normalizedCurrent = currentUsername.toLowerCase()
+    const normalizedNext = newUsername.toLowerCase()
+    const user = this.usersByName.get(normalizedCurrent)
+    if (!user) {
+      throw new ProfileApiError(404, 'USER_NOT_FOUND', 'کاربر موردنظر پیدا نشد.')
+    }
+
+    if (normalizedCurrent === normalizedNext) {
+      user.username = newUsername
+      this.usersByName.set(normalizedCurrent, user)
+      return { username: user.username }
+    }
+
+    if (this.usersByName.has(normalizedNext)) {
+      throw new ProfileApiError(409, 'USERNAME_TAKEN', 'این نام کاربری قبلاً ثبت شده است.')
+    }
+
+    this.usersByName.delete(normalizedCurrent)
+    user.username = newUsername
+    this.usersByName.set(normalizedNext, user)
+
+    return { username: newUsername }
+  }
+
+  changePassword(input: {
+    username: string
+    currentPassword: string
+    nextPassword: string
+    confirmNextPassword: string
+  }): { username: string } {
+    const username = input.username.trim()
+    const currentPassword = input.currentPassword
+    const nextPassword = input.nextPassword
+    const confirmNextPassword = input.confirmNextPassword
+
+    if (!username) {
+      throw new ProfileApiError(400, 'INVALID_USERNAME', 'نام کاربری الزامی است.')
+    }
+    if (!currentPassword) {
+      throw new ProfileApiError(400, 'INVALID_PASSWORD', 'رمز عبور فعلی الزامی است.')
+    }
+    if (nextPassword.length < 6) {
+      throw new ProfileApiError(400, 'INVALID_PASSWORD', 'رمز عبور جدید باید حداقل ۶ کاراکتر باشد.')
+    }
+    if (nextPassword !== confirmNextPassword) {
+      throw new ProfileApiError(400, 'PASSWORD_MISMATCH', 'تکرار رمز عبور جدید با رمز عبور جدید یکسان نیست.')
+    }
+
+    const normalized = username.toLowerCase()
+    const user = this.usersByName.get(normalized)
+    if (!user) {
+      throw new ProfileApiError(404, 'USER_NOT_FOUND', 'کاربر موردنظر پیدا نشد.')
+    }
+
+    const currentPasswordHash = createHash('sha256').update(currentPassword).digest('hex')
+    if (user.passwordHash !== currentPasswordHash) {
+      throw new ProfileApiError(401, 'INVALID_CREDENTIALS', 'رمز عبور فعلی اشتباه است.')
+    }
+
+    user.passwordHash = createHash('sha256').update(nextPassword).digest('hex')
+    this.usersByName.set(normalized, user)
+
+    return { username: user.username }
+  }
 }
 
 declare global {

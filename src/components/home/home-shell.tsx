@@ -32,6 +32,17 @@ async function parseJsonSafe(response: Response): Promise<RegisterResponse> {
   }
 }
 
+function PencilIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4">
+      <path
+        d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25Zm17.71-10.04a1.003 1.003 0 0 0 0-1.42l-2.5-2.5a1.003 1.003 0 0 0-1.42 0l-1.96 1.96 3.75 3.75 2.13-2.79Z"
+        fill="currentColor"
+      />
+    </svg>
+  )
+}
+
 function HomeContent({
   onStartOnline,
   onSoon,
@@ -77,24 +88,50 @@ function HomeContent({
 }
 
 function ProfileContent({
+  isAuthenticated,
   mode,
   onModeChange,
   profileName,
   draftName,
   password,
   confirmPassword,
+  usernameEditValue,
+  onUsernameEditValueChange,
+  isEditingUsername,
+  onToggleUsernameEdit,
+  onSaveUsername,
+  currentPassword,
+  onCurrentPasswordChange,
+  newPassword,
+  onNewPasswordChange,
+  confirmNewPassword,
+  onConfirmNewPasswordChange,
+  onChangePassword,
   onDraftNameChange,
   onPasswordChange,
   onConfirmPasswordChange,
   onSubmit,
   isSubmitting,
 }: {
+  isAuthenticated: boolean
   mode: 'login' | 'register'
   onModeChange: (mode: 'login' | 'register') => void
   profileName: string
   draftName: string
   password: string
   confirmPassword: string
+  usernameEditValue: string
+  onUsernameEditValueChange: (value: string) => void
+  isEditingUsername: boolean
+  onToggleUsernameEdit: () => void
+  onSaveUsername: () => void
+  currentPassword: string
+  onCurrentPasswordChange: (value: string) => void
+  newPassword: string
+  onNewPasswordChange: (value: string) => void
+  confirmNewPassword: string
+  onConfirmNewPasswordChange: (value: string) => void
+  onChangePassword: () => void
   onDraftNameChange: (value: string) => void
   onPasswordChange: (value: string) => void
   onConfirmPasswordChange: (value: string) => void
@@ -102,6 +139,97 @@ function ProfileContent({
   isSubmitting: boolean
 }) {
   const isRegisterMode = mode === 'register'
+
+  if (isAuthenticated) {
+    return (
+      <section className="w-full max-w-md space-y-4 rounded-2xl border border-slate-700 bg-slate-900/70 p-5 shadow-lg">
+        <h2 className="text-center text-xl font-bold text-slate-100">پروفایل من</h2>
+        <div className="space-y-2 rounded-xl border border-slate-700 bg-slate-950/70 p-4">
+          <p className="text-xs text-slate-400">نام کاربری</p>
+          <div className="flex items-center gap-2">
+            {isEditingUsername ? (
+              <>
+                <input
+                  value={usernameEditValue}
+                  onChange={(event) => onUsernameEditValueChange(event.target.value)}
+                  data-testid="profile-username-edit-input"
+                  className="flex-1 rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none ring-cyan-400 transition focus:ring-2"
+                  placeholder="نام کاربری جدید"
+                />
+                <button
+                  type="button"
+                  onClick={onSaveUsername}
+                  disabled={isSubmitting}
+                  data-testid="profile-username-save-btn"
+                  className="rounded-lg bg-cyan-400 px-3 py-2 text-xs font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  ذخیره
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="flex-1 text-sm font-semibold text-slate-100" data-testid="profile-username-value">
+                  {profileName}
+                </p>
+                <button
+                  type="button"
+                  onClick={onToggleUsernameEdit}
+                  data-testid="profile-username-edit-btn"
+                  className="inline-flex items-center justify-center rounded-lg border border-slate-600 p-2 text-slate-200 transition hover:bg-slate-800"
+                  aria-label="ویرایش نام کاربری"
+                >
+                  <PencilIcon />
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="space-y-3 rounded-xl border border-slate-700 bg-slate-950/70 p-4">
+          <p className="text-sm font-semibold text-slate-200">تغییر رمز عبور</p>
+          <label className="block space-y-2">
+            <span className="text-xs text-slate-400">رمز عبور فعلی</span>
+            <input
+              type="password"
+              value={currentPassword}
+              onChange={(event) => onCurrentPasswordChange(event.target.value)}
+              data-testid="profile-current-password-input"
+              className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none ring-cyan-400 transition focus:ring-2"
+            />
+          </label>
+          <label className="block space-y-2">
+            <span className="text-xs text-slate-400">رمز عبور جدید</span>
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(event) => onNewPasswordChange(event.target.value)}
+              data-testid="profile-new-password-input"
+              className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none ring-cyan-400 transition focus:ring-2"
+            />
+          </label>
+          <label className="block space-y-2">
+            <span className="text-xs text-slate-400">تکرار رمز عبور جدید</span>
+            <input
+              type="password"
+              value={confirmNewPassword}
+              onChange={(event) => onConfirmNewPasswordChange(event.target.value)}
+              data-testid="profile-confirm-new-password-input"
+              className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none ring-cyan-400 transition focus:ring-2"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={onChangePassword}
+            disabled={isSubmitting}
+            data-testid="profile-change-password-btn"
+            className="w-full rounded-lg bg-cyan-400 px-4 py-2 text-sm font-bold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            تغییر رمز عبور
+          </button>
+        </div>
+      </section>
+    )
+  }
 
   return (
     <section className="w-full max-w-md space-y-4 rounded-2xl border border-slate-700 bg-slate-900/70 p-5 shadow-lg">
@@ -199,9 +327,15 @@ export function HomeShell() {
   const [activeTab, setActiveTab] = useState<FooterTab>('home')
   const [profileMode, setProfileMode] = useState<'login' | 'register'>('login')
   const [profileName, setProfileName] = useState('')
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [draftName, setDraftName] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [usernameEditValue, setUsernameEditValue] = useState('')
+  const [isEditingUsername, setIsEditingUsername] = useState(false)
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmNewPassword, setConfirmNewPassword] = useState('')
   const [bannerMessage, setBannerMessage] = useState<string | null>(null)
   const [isStartingOnline, setIsStartingOnline] = useState(false)
   const [isRegistering, setIsRegistering] = useState(false)
@@ -210,7 +344,9 @@ export function HomeShell() {
     const stored = localStorage.getItem(PROFILE_USERNAME_STORAGE_KEY)?.trim() ?? ''
     if (!stored) return
     setProfileName(stored)
+    setUsernameEditValue(stored)
     setDraftName(stored)
+    setIsAuthenticated(true)
   }, [])
 
   const handleStartOnline = async () => {
@@ -284,10 +420,105 @@ export function HomeShell() {
       const savedName = payload.user?.username ?? normalized
       localStorage.setItem(PROFILE_USERNAME_STORAGE_KEY, savedName)
       setProfileName(savedName)
+      setUsernameEditValue(savedName)
       setDraftName(savedName)
+      setIsAuthenticated(true)
+      setActiveTab('profile')
       setPassword('')
       setConfirmPassword('')
       setBannerMessage(profileMode === 'register' ? 'ثبت نام با موفقیت انجام شد.' : 'ورود با موفقیت انجام شد.')
+    } catch {
+      setBannerMessage('خطا در ارتباط با سرور پروفایل.')
+    } finally {
+      setIsRegistering(false)
+    }
+  }
+
+  const handleSaveUsername = async () => {
+    const currentUsername = profileName.trim()
+    const newUsername = usernameEditValue.trim()
+
+    if (newUsername.length < 3) {
+      setBannerMessage('نام کاربری باید حداقل ۳ کاراکتر باشد.')
+      return
+    }
+    if (!currentUsername) {
+      setBannerMessage('ابتدا وارد حساب کاربری شوید.')
+      return
+    }
+
+    setIsRegistering(true)
+    setBannerMessage(null)
+    try {
+      const response = await fetch('/api/profile/update-username', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          currentUsername,
+          newUsername,
+        }),
+      })
+      const payload = await parseJsonSafe(response)
+      if (!response.ok) {
+        setBannerMessage(payload.error?.message ?? 'تغییر نام کاربری انجام نشد.')
+        return
+      }
+
+      const savedName = payload.user?.username ?? newUsername
+      localStorage.setItem(PROFILE_USERNAME_STORAGE_KEY, savedName)
+      setProfileName(savedName)
+      setUsernameEditValue(savedName)
+      setDraftName(savedName)
+      setIsEditingUsername(false)
+      setBannerMessage('نام کاربری با موفقیت تغییر کرد.')
+    } catch {
+      setBannerMessage('خطا در ارتباط با سرور پروفایل.')
+    } finally {
+      setIsRegistering(false)
+    }
+  }
+
+  const handleChangePassword = async () => {
+    if (!profileName.trim()) {
+      setBannerMessage('ابتدا وارد حساب کاربری شوید.')
+      return
+    }
+    if (!currentPassword) {
+      setBannerMessage('رمز عبور فعلی را وارد کنید.')
+      return
+    }
+    if (newPassword.length < 6) {
+      setBannerMessage('رمز عبور جدید باید حداقل ۶ کاراکتر باشد.')
+      return
+    }
+    if (newPassword !== confirmNewPassword) {
+      setBannerMessage('تکرار رمز عبور جدید با هم یکسان نیست.')
+      return
+    }
+
+    setIsRegistering(true)
+    setBannerMessage(null)
+    try {
+      const response = await fetch('/api/profile/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: profileName.trim(),
+          currentPassword,
+          newPassword,
+          confirmNewPassword,
+        }),
+      })
+      const payload = await parseJsonSafe(response)
+      if (!response.ok) {
+        setBannerMessage(payload.error?.message ?? 'تغییر رمز عبور انجام نشد.')
+        return
+      }
+
+      setCurrentPassword('')
+      setNewPassword('')
+      setConfirmNewPassword('')
+      setBannerMessage('رمز عبور با موفقیت تغییر کرد.')
     } catch {
       setBannerMessage('خطا در ارتباط با سرور پروفایل.')
     } finally {
@@ -313,6 +544,7 @@ export function HomeShell() {
           ) : null}
           {activeTab === 'profile' ? (
             <ProfileContent
+              isAuthenticated={isAuthenticated}
               mode={profileMode}
               onModeChange={(mode) => {
                 setProfileMode(mode)
@@ -322,6 +554,21 @@ export function HomeShell() {
               }}
               profileName={profileName}
               draftName={draftName}
+              usernameEditValue={usernameEditValue}
+              onUsernameEditValueChange={setUsernameEditValue}
+              isEditingUsername={isEditingUsername}
+              onToggleUsernameEdit={() => {
+                setIsEditingUsername(true)
+                setUsernameEditValue(profileName)
+              }}
+              onSaveUsername={handleSaveUsername}
+              currentPassword={currentPassword}
+              onCurrentPasswordChange={setCurrentPassword}
+              newPassword={newPassword}
+              onNewPasswordChange={setNewPassword}
+              confirmNewPassword={confirmNewPassword}
+              onConfirmNewPasswordChange={setConfirmNewPassword}
+              onChangePassword={handleChangePassword}
               onDraftNameChange={setDraftName}
               onSubmit={handleSaveProfile}
               password={password}
