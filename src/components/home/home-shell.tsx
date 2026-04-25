@@ -36,6 +36,13 @@ interface FooterItem {
   label: string
 }
 
+interface OnlineTimeControlOption {
+  id: string
+  label: string
+  timeControlMinutes: number
+  incrementSeconds: number
+}
+
 interface ApiResponse {
   status?: string
   persistence?: string
@@ -56,6 +63,16 @@ const FOOTER_ITEMS: FooterItem[] = [
   { id: 'profile', label: 'پروفایل' },
   { id: 'puzzle', label: 'پازل' },
   { id: 'news', label: 'اخبار' },
+]
+
+const ONLINE_TIME_CONTROL_STORAGE_KEY = 'realtime-chess-online-time-control'
+const ONLINE_TIME_CONTROL_OPTIONS: OnlineTimeControlOption[] = [
+  { id: '1-0', label: 'Bullet • 1+0', timeControlMinutes: 1, incrementSeconds: 0 },
+  { id: '3-0', label: 'Blitz • 3+0', timeControlMinutes: 3, incrementSeconds: 0 },
+  { id: '3-2', label: 'Blitz • 3+2', timeControlMinutes: 3, incrementSeconds: 2 },
+  { id: '5-0', label: 'Rapid • 5+0', timeControlMinutes: 5, incrementSeconds: 0 },
+  { id: '10-2', label: 'Rapid • 10+2', timeControlMinutes: 10, incrementSeconds: 2 },
+  { id: '15-10', label: 'Rapid • 15+10', timeControlMinutes: 15, incrementSeconds: 10 },
 ]
 
 async function parseJsonSafe(response: Response): Promise<ApiResponse> {
@@ -127,16 +144,26 @@ function HomeContent({
   onOpenFriendPlay,
   onStartOffline,
   onBackToMenu,
+  onToggleTimeControlOptions,
+  onSelectTimeControl,
   homePanel,
   friendPresence,
+  selectedTimeControlLabel,
+  isTimeControlOptionsOpen,
+  timeControlOptions,
   isStartingOnline,
 }: {
   onStartOnline: () => void
   onOpenFriendPlay: () => void
   onStartOffline: () => void
   onBackToMenu: () => void
+  onToggleTimeControlOptions: () => void
+  onSelectTimeControl: (optionId: string) => void
   homePanel: HomePanel
   friendPresence: FriendPresenceItem[]
+  selectedTimeControlLabel: string
+  isTimeControlOptionsOpen: boolean
+  timeControlOptions: OnlineTimeControlOption[]
   isStartingOnline: boolean
 }) {
   if (homePanel === 'friend-play') {
@@ -195,6 +222,33 @@ function HomeContent({
       <h2 className="text-center text-xl font-bold text-slate-100">صفحه خانه</h2>
       <p className="text-center text-sm text-slate-300">برای ادامه یکی از گزینه‌های زیر را انتخاب کنید.</p>
       <div className="space-y-3">
+        <div className="space-y-2 rounded-xl border border-slate-700 bg-slate-950/55 p-3">
+          <p className="text-xs text-slate-400">زمان بازی آنلاین</p>
+          <button
+            type="button"
+            onClick={onToggleTimeControlOptions}
+            data-testid="online-time-selector-btn"
+            className="flex w-full items-center justify-between rounded-lg border border-cyan-400/40 bg-cyan-500/10 px-3 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-500/20"
+          >
+            <span>{selectedTimeControlLabel}</span>
+            <span className="text-xs text-cyan-200">{isTimeControlOptionsOpen ? 'بستن' : 'تغییر'}</span>
+          </button>
+          {isTimeControlOptionsOpen ? (
+            <div className="space-y-1 rounded-lg border border-slate-700 bg-slate-900/70 p-1.5" data-testid="online-time-options-list">
+              {timeControlOptions.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => onSelectTimeControl(option.id)}
+                  data-testid={`online-time-option-${option.id}`}
+                  className="w-full rounded-md px-3 py-2 text-right text-xs font-semibold text-slate-200 transition hover:bg-slate-800"
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
         <button
           type="button"
           onClick={onStartOnline}
@@ -781,6 +835,8 @@ export function HomeShell() {
   const [isStartingOnline, setIsStartingOnline] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [storageReady, setStorageReady] = useState(false)
+  const [selectedTimeControlId, setSelectedTimeControlId] = useState<string | null>(null)
+  const [isTimeControlOptionsOpen, setIsTimeControlOptionsOpen] = useState(false)
 
   const clearAuthState = useCallback((message?: string) => {
     localStorage.removeItem(PROFILE_USERNAME_STORAGE_KEY)
@@ -985,18 +1041,41 @@ export function HomeShell() {
   useEffect(() => {
     if (activeTab !== 'home') {
       setHomePanel('menu')
+      setIsTimeControlOptionsOpen(false)
     }
   }, [activeTab])
 
+  useEffect(() => {
+    const saved = localStorage.getItem(ONLINE_TIME_CONTROL_STORAGE_KEY)?.trim() ?? ''
+    if (!saved) {
+      return
+    }
+    const exists = ONLINE_TIME_CONTROL_OPTIONS.some((option) => option.id === saved)
+    if (exists) {
+      setSelectedTimeControlId(saved)
+    }
+  }, [])
+
   const handleStartOnline = async () => {
+    if (!selectedTimeControlId) {
+      setBannerMessage('قبل از شروع بازی آنلاین، زمان بازی را انتخاب کن.')
+      setIsTimeControlOptionsOpen(true)
+      return
+    }
+    const selectedTimeControl = ONLINE_TIME_CONTROL_OPTIONS.find((option) => option.id === selectedTimeControlId)
+    if (!selectedTimeControl) {
+      setBannerMessage('زمان انتخاب‌شده معتبر نیست. لطفاً دوباره انتخاب کن.')
+      setIsTimeControlOptionsOpen(true)
+      return
+    }
     const preferredName = profileName.trim() || 'Guest'
     setIsStartingOnline(true)
     setBannerMessage(null)
     try {
       const response = await createRoom({
         name: preferredName,
-        timeControlMinutes: 10,
-        incrementSeconds: 2,
+        timeControlMinutes: selectedTimeControl.timeControlMinutes,
+        incrementSeconds: selectedTimeControl.incrementSeconds,
       })
       localStorage.setItem(
         'realtime-chess-session',
@@ -1028,6 +1107,24 @@ export function HomeShell() {
   const handleBackToHomeMenu = () => {
     setHomePanel('menu')
   }
+
+  const handleToggleTimeControlOptions = () => {
+    setIsTimeControlOptionsOpen((previous) => !previous)
+  }
+
+  const handleSelectTimeControl = (optionId: string) => {
+    const selectedOption = ONLINE_TIME_CONTROL_OPTIONS.find((option) => option.id === optionId)
+    if (!selectedOption) {
+      return
+    }
+    setSelectedTimeControlId(selectedOption.id)
+    localStorage.setItem(ONLINE_TIME_CONTROL_STORAGE_KEY, selectedOption.id)
+    setIsTimeControlOptionsOpen(false)
+    setBannerMessage(null)
+  }
+
+  const selectedTimeControlLabel =
+    ONLINE_TIME_CONTROL_OPTIONS.find((option) => option.id === selectedTimeControlId)?.label ?? 'انتخاب زمان'
 
   const handleSubmitAuth = async () => {
     if (!storageReady) {
@@ -1377,8 +1474,13 @@ export function HomeShell() {
               onOpenFriendPlay={handleOpenFriendPlay}
               onStartOffline={handleStartOffline}
               onBackToMenu={handleBackToHomeMenu}
+              onToggleTimeControlOptions={handleToggleTimeControlOptions}
+              onSelectTimeControl={handleSelectTimeControl}
               homePanel={homePanel}
               friendPresence={friendPresence}
+              selectedTimeControlLabel={selectedTimeControlLabel}
+              isTimeControlOptionsOpen={isTimeControlOptionsOpen}
+              timeControlOptions={ONLINE_TIME_CONTROL_OPTIONS}
               isStartingOnline={isStartingOnline}
             />
           ) : null}

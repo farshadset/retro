@@ -1,6 +1,24 @@
 import { test, expect } from '@playwright/test'
 
 test.describe('Home actions and profile registration', () => {
+  test('online time selector shows default and persists last choice', async ({ page }) => {
+    await page.goto('/')
+    await page.evaluate(() => localStorage.clear())
+    await page.reload()
+
+    await expect(page.getByTestId('online-time-selector-btn')).toContainText('انتخاب زمان')
+
+    await page.getByTestId('online-play-btn').click()
+    await expect(page.getByTestId('home-banner-message')).toContainText('قبل از شروع بازی آنلاین، زمان بازی را انتخاب کن.')
+    await expect(page.getByTestId('online-time-options-list')).toBeVisible()
+
+    await page.getByTestId('online-time-option-3-2').click()
+    await expect(page.getByTestId('online-time-selector-btn')).toContainText('Blitz • 3+2')
+
+    await page.reload()
+    await expect(page.getByTestId('online-time-selector-btn')).toContainText('Blitz • 3+2')
+  })
+
   test('friend play shows friends with online indicator', async ({ page, context }) => {
     const seed = Date.now()
     const userA = `friendplay-a-${seed}`
@@ -145,6 +163,8 @@ test.describe('Home actions and profile registration', () => {
     await expect(page.getByTestId('profile-login-btn')).toBeVisible()
 
     await page.getByTestId('footer-tab-home').click()
+    await page.getByTestId('online-time-selector-btn').click()
+    await page.getByTestId('online-time-option-10-2').click()
     await page.getByTestId('online-play-btn').click()
     await expect(page).toHaveURL(/\/online\?room=/)
     await expect(page.getByText(/Room\s+[A-Z0-9]+/)).toBeVisible()
