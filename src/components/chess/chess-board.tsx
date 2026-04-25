@@ -11,6 +11,7 @@ interface ChessBoardProps {
   fen: string
   lastMove: RoomSnapshot['lastMove']
   perspective: PlayerColor
+  mirrorPieces?: boolean
   selectedSquare: Square | null
   highlightedMoves: Square[]
   onSquareClick: (square: Square) => void
@@ -37,6 +38,7 @@ function ChessBoardComponent({
   fen,
   lastMove,
   perspective,
+  mirrorPieces = false,
   selectedSquare,
   highlightedMoves,
   onSquareClick,
@@ -71,6 +73,7 @@ function ChessBoardComponent({
             highlightedSet={highlightedSet}
             lastMove={lastMove}
             pieceBySquare={pieceBySquare}
+            mirrorPieces={mirrorPieces}
             onSquareClick={onSquareClick}
           />
         ))}
@@ -87,6 +90,7 @@ interface FragmentRowProps {
   highlightedSet: Set<Square>
   lastMove: RoomSnapshot['lastMove']
   pieceBySquare: Map<Square, PieceCode>
+  mirrorPieces: boolean
   onSquareClick: (square: Square) => void
 }
 
@@ -98,6 +102,7 @@ function FragmentRow({
   highlightedSet,
   lastMove,
   pieceBySquare,
+  mirrorPieces,
   onSquareClick,
 }: FragmentRowProps) {
   return (
@@ -143,7 +148,10 @@ function FragmentRow({
                 alt=""
                 aria-hidden="true"
                 draggable={false}
-                className="pointer-events-none absolute inset-0 m-auto h-[86%] w-[86%] drop-shadow-[0_1px_1px_rgba(0,0,0,0.45)]"
+                className={[
+                  'pointer-events-none absolute inset-0 m-auto h-[86%] w-[86%] drop-shadow-[0_1px_1px_rgba(0,0,0,0.45)]',
+                  mirrorPieces ? 'scale-x-[-1]' : '',
+                ].join(' ')}
               />
             ) : null}
             {isMoveTarget && !piece ? (

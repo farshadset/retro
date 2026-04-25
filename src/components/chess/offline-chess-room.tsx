@@ -13,7 +13,23 @@ type PromotionPiece = 'q' | 'r' | 'b' | 'n'
 interface PendingPromotion {
   from: Square
   to: Square
+  color: 'w' | 'b'
   options: PromotionPiece[]
+}
+
+const PROMOTION_ICON_BY_COLOR: Record<'w' | 'b', Record<PromotionPiece, string>> = {
+  w: {
+    q: '/chess/pieces/cburnett/wQ.svg',
+    r: '/chess/pieces/cburnett/wR.svg',
+    b: '/chess/pieces/cburnett/wB.svg',
+    n: '/chess/pieces/cburnett/wN.svg',
+  },
+  b: {
+    q: '/chess/pieces/cburnett/bQ.svg',
+    r: '/chess/pieces/cburnett/bR.svg',
+    b: '/chess/pieces/cburnett/bB.svg',
+    n: '/chess/pieces/cburnett/bN.svg',
+  },
 }
 
 function chooseBotMove(chess: Chess) {
@@ -169,6 +185,7 @@ export function OfflineChessRoom() {
       setPendingPromotion({
         from: selectedSquare,
         to: square,
+        color: turnColor,
         options: uniquePromotionOptions,
       })
       return
@@ -289,23 +306,21 @@ export function OfflineChessRoom() {
                 </p>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                   {pendingPromotion.options.map((promotion) => {
-                    const label =
-                      promotion === 'q'
-                        ? 'وزیر'
-                        : promotion === 'r'
-                          ? 'رخ'
-                          : promotion === 'b'
-                            ? 'فیل'
-                            : 'اسب'
                     return (
                       <button
                         key={promotion}
                         type="button"
                         onClick={() => handlePromotionChoice(promotion)}
                         data-testid={`offline-promotion-option-${promotion}`}
-                        className="rounded-md border border-cyan-400/40 bg-cyan-500/10 px-3 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-500/20"
+                        className="inline-flex items-center justify-center rounded-md border border-cyan-400/40 bg-cyan-500/10 px-3 py-2 transition hover:bg-cyan-500/20"
                       >
-                        {label}
+                        <img
+                          src={PROMOTION_ICON_BY_COLOR[pendingPromotion.color][promotion]}
+                          alt=""
+                          aria-hidden="true"
+                          className="h-9 w-9"
+                          draggable={false}
+                        />
                       </button>
                     )
                   })}

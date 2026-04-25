@@ -16,6 +16,28 @@ interface PendingPromotion {
   options: PromotionPiece[]
 }
 
+const PROMOTION_LABELS: Record<PromotionPiece, string> = {
+  q: 'Queen',
+  r: 'Rook',
+  b: 'Bishop',
+  n: 'Knight',
+}
+
+const PROMOTION_ICON_BY_COLOR: Record<'white' | 'black', Record<PromotionPiece, string>> = {
+  white: {
+    q: '/chess/pieces/cburnett/wQ.svg',
+    r: '/chess/pieces/cburnett/wR.svg',
+    b: '/chess/pieces/cburnett/wB.svg',
+    n: '/chess/pieces/cburnett/wN.svg',
+  },
+  black: {
+    q: '/chess/pieces/cburnett/bQ.svg',
+    r: '/chess/pieces/cburnett/bR.svg',
+    b: '/chess/pieces/cburnett/bB.svg',
+    n: '/chess/pieces/cburnett/bN.svg',
+  },
+}
+
 function describeDraw(chess: Chess): string {
   if (chess.isStalemate()) return 'Stalemate'
   if (chess.isThreefoldRepetition()) return 'Threefold repetition'
@@ -185,7 +207,7 @@ export function PersonalChessRoom() {
                   : snapshot.drawReason ?? 'مساوی'}
             </h2>
             <p className="text-xs text-[#bfb9b1]" data-testid="personal-perspective-label">
-              صفحه برای بازیکن {snapshot.turn === 'white' ? 'سفید' : 'مشکی'} چرخیده است.
+              نوبت برای بازیکن {snapshot.turn === 'white' ? 'سفید' : 'مشکی'} است.
             </p>
           </div>
           <button
@@ -202,11 +224,12 @@ export function PersonalChessRoom() {
 
         <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
           <div className="flex flex-col items-center gap-4">
-            <PlayerPanel snapshot={snapshot} perspective={snapshot.turn} />
+            <PlayerPanel snapshot={snapshot} perspective="white" />
             <ChessBoard
               fen={snapshot.fen}
               lastMove={snapshot.lastMove}
-              perspective={snapshot.turn}
+              perspective="white"
+              mirrorPieces={snapshot.turn === 'black'}
               selectedSquare={selectedSquare}
               highlightedMoves={moveTargets}
               onSquareClick={handleSquareClick}
@@ -214,27 +237,24 @@ export function PersonalChessRoom() {
             {pendingPromotion ? (
               <section className="w-full max-w-[min(96vw,680px)] rounded-md border border-[#3a3734] bg-[#262421] p-3">
                 <p className="mb-3 text-sm font-semibold text-[#f3efe8]" data-testid="personal-promotion-picker-title">
-                  سرباز به آخر رسید؛ انتخاب کن به چه مهره‌ای تبدیل شود:
+                  انتخاب مهره ارتقای سرباز
                 </p>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                   {pendingPromotion.options.map((promotion) => {
-                    const label =
-                      promotion === 'q'
-                        ? 'وزیر'
-                        : promotion === 'r'
-                          ? 'رخ'
-                          : promotion === 'b'
-                            ? 'فیل'
-                            : 'اسب'
                     return (
                       <button
                         key={promotion}
                         type="button"
                         onClick={() => handlePromotionChoice(promotion)}
                         data-testid={`personal-promotion-option-${promotion}`}
-                        className="rounded-md border border-cyan-400/40 bg-cyan-500/10 px-3 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-500/20"
+                        className="flex items-center justify-center rounded-md border border-cyan-400/40 bg-cyan-500/10 px-3 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-500/20"
+                        aria-label={PROMOTION_LABELS[promotion]}
                       >
-                        {label}
+                        <img
+                          src={PROMOTION_ICON_BY_COLOR[snapshot.turn][promotion]}
+                          alt={PROMOTION_LABELS[promotion]}
+                          className="h-10 w-10"
+                        />
                       </button>
                     )
                   })}
@@ -256,7 +276,7 @@ export function PersonalChessRoom() {
               <h3 className="mb-2 text-sm font-bold uppercase tracking-wide text-[#f3efe8]">Players</h3>
               <p>White: Player 1</p>
               <p>Black: Player 2</p>
-              <p className="mt-2 text-xs text-[#9f9a93]">نکته: بعد از هر حرکت، برد برای نفر بعدی می‌چرخد.</p>
+              <p className="mt-2 text-xs text-[#9f9a93]">نکته: بعد از هر حرکت فقط نمایش مهره‌ها برای بازیکن بعدی آینه می‌شود.</p>
             </section>
           </aside>
         </section>

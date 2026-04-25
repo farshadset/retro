@@ -23,6 +23,21 @@ interface PendingPromotion {
   options: PromotionPiece[]
 }
 
+const PROMOTION_PIECE_IMAGE: Record<PlayerColor, Record<PromotionPiece, string>> = {
+  white: {
+    q: '/chess/pieces/cburnett/wQ.svg',
+    r: '/chess/pieces/cburnett/wR.svg',
+    b: '/chess/pieces/cburnett/wB.svg',
+    n: '/chess/pieces/cburnett/wN.svg',
+  },
+  black: {
+    q: '/chess/pieces/cburnett/bQ.svg',
+    r: '/chess/pieces/cburnett/bR.svg',
+    b: '/chess/pieces/cburnett/bB.svg',
+    n: '/chess/pieces/cburnett/bN.svg',
+  },
+}
+
 const SESSION_STORAGE_KEY = 'realtime-chess-session'
 
 function statusLabel(status: RoomStatus): string {
@@ -554,27 +569,24 @@ export function ChessRoom() {
             {pendingPromotion ? (
               <section className="w-full max-w-[min(96vw,680px)] rounded-md border border-[#3a3734] bg-[#262421] p-3">
                 <p className="mb-3 text-sm font-semibold text-[#f3efe8]" data-testid="promotion-picker-title">
-                  سرباز به آخر رسید؛ انتخاب کن به چه مهره‌ای تبدیل شود:
+                  مهره ارتقا را انتخاب کن:
                 </p>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                   {pendingPromotion.options.map((promotion) => {
-                    const label =
-                      promotion === 'q'
-                        ? 'وزیر'
-                        : promotion === 'r'
-                          ? 'رخ'
-                          : promotion === 'b'
-                            ? 'فیل'
-                            : 'اسب'
                     return (
                       <button
                         key={promotion}
                         type="button"
                         onClick={() => void handlePromotionChoice(promotion)}
                         data-testid={`promotion-option-${promotion}`}
-                        className="rounded-md border border-cyan-400/40 bg-cyan-500/10 px-3 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-500/20"
+                        className="flex items-center justify-center rounded-md border border-cyan-400/40 bg-cyan-500/10 px-3 py-2 transition hover:bg-cyan-500/20"
                       >
-                        {label}
+                        <img
+                          src={PROMOTION_PIECE_IMAGE[session.color ?? 'white'][promotion]}
+                          alt=""
+                          aria-hidden="true"
+                          className="h-11 w-11"
+                        />
                       </button>
                     )
                   })}
