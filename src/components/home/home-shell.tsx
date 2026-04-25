@@ -8,6 +8,22 @@ import { PROFILE_USERNAME_STORAGE_KEY } from '@/lib/profile/constants'
 type FooterTab = 'home' | 'profile' | 'puzzle' | 'news'
 type ProfileMode = 'login' | 'register'
 type FriendRelation = 'none' | 'friend' | 'incoming' | 'outgoing'
+type ProfilePanel = 'friends' | 'notifications'
+type NotificationType =
+  | 'friend_request_received'
+  | 'friend_request_accepted'
+  | 'friend_request_rejected'
+  | 'friend_request_canceled'
+  | 'friend_removed'
+
+interface NotificationItem {
+  id: string
+  type: NotificationType
+  actorUsername: string
+  message: string
+  createdAt: number
+  read: boolean
+}
 
 interface FooterItem {
   id: FooterTab
@@ -21,6 +37,8 @@ interface ApiResponse {
   outgoingRequests?: string[]
   incomingCount?: number
   users?: Array<{ username: string; relation: FriendRelation }>
+  notifications?: NotificationItem[]
+  unreadCount?: number
   error?: { code?: string; message?: string }
 }
 
@@ -37,6 +55,27 @@ async function parseJsonSafe(response: Response): Promise<ApiResponse> {
   } catch {
     return {}
   }
+}
+
+function formatNotificationTime(timestamp: number): string {
+  const now = Date.now()
+  const diffMs = Math.max(0, now - timestamp)
+  const diffMinutes = Math.floor(diffMs / 60000)
+  if (diffMinutes < 1) {
+    return 'همین الان'
+  }
+  if (diffMinutes < 60) {
+    return `${diffMinutes} دقیقه پیش`
+  }
+  const diffHours = Math.floor(diffMinutes / 60)
+  if (diffHours < 24) {
+    return `${diffHours} ساعت پیش`
+  }
+  const diffDays = Math.floor(diffHours / 24)
+  if (diffDays < 7) {
+    return `${diffDays} روز پیش`
+  }
+  return new Date(timestamp).toLocaleDateString('fa-IR')
 }
 
 function PencilIcon() {
@@ -152,6 +191,13 @@ interface ProfileContentProps {
   friendSearchResults: Array<{ username: string; relation: FriendRelation }>
   onSendFriendRequest: (targetUsername: string) => void
   onRespondFriendRequest: (fromUsername: string, action: 'accept' | 'reject') => void
+  onCancelOutgoingRequest: (toUsername: string) => void
+  onRemoveFriend: (friendUsername: string) => void
+  activePanel: ProfilePanel
+  onPanelChange: (panel: ProfilePanel) => void
+  notifications: NotificationItem[]
+  notificationUnreadCount: number
+  onMarkNotificationsRead: (notificationIds?: string[]) => void
   friendsLoading: boolean
 }
 
@@ -190,6 +236,13 @@ function ProfileContent(props: ProfileContentProps) {
     friendSearchResults,
     onSendFriendRequest,
     onRespondFriendRequest,
+    onCancelOutgoingRequest,
+    onRemoveFriend,
+    activePanel,
+    onPanelChange,
+    notifications,
+    notificationUnreadCount,
+    onMarkNotificationsRead,
     friendsLoading,
   } = props
 
@@ -285,139 +338,243 @@ function ProfileContent(props: ProfileContentProps) {
         </div>
 
         <div className="space-y-3 rounded-xl border border-slate-700 bg-slate-950/70 p-4">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-semibold text-slate-200">دوستان</p>
-            {incomingRequestCount > 0 ? (
-              <span
-                data-testid="friends-incoming-count"
-                className="rounded-full bg-rose-500/20 px-2 py-0.5 text-xs font-semibold text-rose-200"
-              >
-                {incomingRequestCount} درخواست جدید
-              </span>
-            ) : null}
+          <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-900/80 p-1">
+            <button
+              type="button"
+              onClick={() => onPanelChange('friends')}
+              data-testid="profile-panel-friends"
+              className={[
+                'rounded-lg px-3 py-2 text-sm font-semibold transition',
+                activePanel === 'friends' ? 'bg-cyan-400 text-slate-950' : 'text-slate-200 hover:bg-slate-800',
+              ].join(' ')}
+            >
+              دوستان
+            </button>
+            <button
+              type="button"
+              onClick={() => onPanelChange('notifications')}
+              data-testid="profile-panel-notifications"
+              className={[
+                'relative rounded-lg px-3 py-2 text-sm font-semibold transition',
+                activePanel === 'notifications' ? 'bg-cyan-400 text-slate-950' : 'text-slate-200 hover:bg-slate-800',
+              ].join(' ')}
+            >
+              نوتیف‌ها
+              {notificationUnreadCount > 0 ? (
+                <span className="mr-2 rounded-full bg-rose-500/90 px-1.5 py-0.5 text-[10px] font-bold text-white" data-testid="notifications-unread-count">
+                  {notificationUnreadCount}
+                </span>
+              ) : null}
+            </button>
           </div>
 
-          <label className="block space-y-2">
-            <span className="text-xs text-slate-400">جستجوی کاربران</span>
-            <input
-              value={friendSearchQuery}
-              onChange={(event) => onFriendSearchQueryChange(event.target.value)}
-              data-testid="friends-search-input"
-              className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none ring-cyan-400 transition focus:ring-2"
-              placeholder="نام کاربری دوستت را جستجو کن"
-            />
-          </label>
-
-          {friendSearchQuery.trim().length >= 2 ? (
-            <div className="space-y-2 rounded-lg border border-slate-700 bg-slate-900/70 p-2">
-              {friendSearchResults.length === 0 ? (
-                <p className="text-xs text-slate-400" data-testid="friends-search-empty">
-                  کاربری پیدا نشد.
-                </p>
-              ) : (
-                friendSearchResults.map((result) => (
-                  <div
-                    key={result.username}
-                    className="flex items-center justify-between rounded-md border border-slate-700 px-2 py-1.5"
-                    data-testid={`friends-search-row-${result.username}`}
+          {activePanel === 'friends' ? (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-slate-200">مدیریت دوستان</p>
+                {incomingRequestCount > 0 ? (
+                  <span
+                    data-testid="friends-incoming-count"
+                    className="rounded-full bg-rose-500/20 px-2 py-0.5 text-xs font-semibold text-rose-200"
                   >
-                    <p className="text-sm text-slate-100">{result.username}</p>
-                    {result.relation === 'none' ? (
-                      <button
-                        type="button"
-                        onClick={() => onSendFriendRequest(result.username)}
-                        disabled={friendsLoading}
-                        data-testid={`friends-send-request-${result.username}`}
-                        className="inline-flex items-center justify-center rounded-md bg-emerald-500 p-1.5 text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
-                        aria-label={`ارسال درخواست دوستی برای ${result.username}`}
-                      >
-                        <PlusIcon />
-                      </button>
-                    ) : (
-                      <span className="text-xs text-slate-300">
-                        {result.relation === 'friend'
-                          ? 'دوست'
-                          : result.relation === 'incoming'
-                            ? 'درخواست از او'
-                            : 'درخواست ارسال شده'}
-                      </span>
-                    )}
-                  </div>
-                ))
-              )}
-            </div>
-          ) : null}
+                    {incomingRequestCount} درخواست جدید
+                  </span>
+                ) : null}
+              </div>
 
-          <div className="space-y-2">
-            <p className="text-xs text-slate-400">درخواست‌های دریافتی</p>
-            {incomingRequests.length === 0 ? (
-              <p className="text-xs text-slate-500" data-testid="friends-incoming-empty">
-                فعلاً درخواستی نداری.
-              </p>
-            ) : (
-              incomingRequests.map((requester) => (
-                <div
-                  key={requester}
-                  className="flex items-center justify-between rounded-md border border-slate-700 px-2 py-1.5"
-                  data-testid={`friends-incoming-row-${requester}`}
-                >
-                  <p className="text-sm text-slate-100">{requester} درخواست دوستی ارسال کرده است.</p>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => onRespondFriendRequest(requester, 'accept')}
-                      disabled={friendsLoading}
-                      data-testid={`friends-accept-${requester}`}
-                      className="inline-flex items-center justify-center rounded-md bg-emerald-500 p-1.5 text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
-                      aria-label={`تایید درخواست ${requester}`}
+              <label className="block space-y-2">
+                <span className="text-xs text-slate-400">جستجوی کاربران</span>
+                <input
+                  value={friendSearchQuery}
+                  onChange={(event) => onFriendSearchQueryChange(event.target.value)}
+                  data-testid="friends-search-input"
+                  className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none ring-cyan-400 transition focus:ring-2"
+                  placeholder="نام کاربری دوستت را جستجو کن"
+                />
+              </label>
+
+              {friendSearchQuery.trim().length >= 2 ? (
+                <div className="space-y-2 rounded-lg border border-slate-700 bg-slate-900/70 p-2">
+                  {friendSearchResults.length === 0 ? (
+                    <p className="text-xs text-slate-400" data-testid="friends-search-empty">
+                      کاربری پیدا نشد.
+                    </p>
+                  ) : (
+                    friendSearchResults.map((result) => (
+                      <div
+                        key={result.username}
+                        className="flex items-center justify-between rounded-md border border-slate-700 px-2 py-1.5"
+                        data-testid={`friends-search-row-${result.username}`}
+                      >
+                        <p className="text-sm text-slate-100">{result.username}</p>
+                        {result.relation === 'none' ? (
+                          <button
+                            type="button"
+                            onClick={() => onSendFriendRequest(result.username)}
+                            disabled={friendsLoading}
+                            data-testid={`friends-send-request-${result.username}`}
+                            className="inline-flex items-center justify-center rounded-md bg-emerald-500 p-1.5 text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+                            aria-label={`ارسال درخواست دوستی برای ${result.username}`}
+                          >
+                            <PlusIcon />
+                          </button>
+                        ) : (
+                          <span className="text-xs text-slate-300">
+                            {result.relation === 'friend'
+                              ? 'دوست'
+                              : result.relation === 'incoming'
+                                ? 'درخواست از او'
+                                : 'درخواست ارسال شده'}
+                          </span>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              ) : null}
+
+              <div className="space-y-2">
+                <p className="text-xs text-slate-400">درخواست‌های دریافتی</p>
+                {incomingRequests.length === 0 ? (
+                  <p className="text-xs text-slate-500" data-testid="friends-incoming-empty">
+                    فعلاً درخواستی نداری.
+                  </p>
+                ) : (
+                  incomingRequests.map((requester) => (
+                    <div
+                      key={requester}
+                      className="flex items-center justify-between rounded-md border border-slate-700 px-2 py-1.5"
+                      data-testid={`friends-incoming-row-${requester}`}
                     >
-                      <CheckIcon />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onRespondFriendRequest(requester, 'reject')}
-                      disabled={friendsLoading}
-                      data-testid={`friends-reject-${requester}`}
-                      className="inline-flex items-center justify-center rounded-md bg-rose-500 p-1.5 text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
-                      aria-label={`رد درخواست ${requester}`}
-                    >
-                      <CrossIcon />
-                    </button>
+                      <p className="text-sm text-slate-100">{requester} درخواست دوستی ارسال کرده است.</p>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => onRespondFriendRequest(requester, 'accept')}
+                          disabled={friendsLoading}
+                          data-testid={`friends-accept-${requester}`}
+                          className="inline-flex items-center justify-center rounded-md bg-emerald-500 p-1.5 text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+                          aria-label={`تایید درخواست ${requester}`}
+                        >
+                          <CheckIcon />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onRespondFriendRequest(requester, 'reject')}
+                          disabled={friendsLoading}
+                          data-testid={`friends-reject-${requester}`}
+                          className="inline-flex items-center justify-center rounded-md bg-rose-500 p-1.5 text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+                          aria-label={`رد درخواست ${requester}`}
+                        >
+                          <CrossIcon />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs text-slate-400">لیست دوستان</p>
+                {friends.length === 0 ? (
+                  <p className="text-xs text-slate-500" data-testid="friends-list-empty">
+                    هنوز دوستی اضافه نشده است.
+                  </p>
+                ) : (
+                  <div className="space-y-1" data-testid="friends-list">
+                    {friends.map((friend) => (
+                      <div
+                        key={friend}
+                        className="flex items-center justify-between rounded-md border border-slate-700 px-2 py-1.5"
+                        data-testid={`friends-list-row-${friend}`}
+                      >
+                        <p className="text-sm text-slate-100">{friend}</p>
+                        <button
+                          type="button"
+                          onClick={() => onRemoveFriend(friend)}
+                          disabled={friendsLoading}
+                          data-testid={`friends-remove-${friend}`}
+                          className="rounded-md border border-rose-400/60 px-2 py-1 text-xs font-semibold text-rose-300 transition hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          حذف دوست
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {outgoingRequests.length > 0 ? (
+                <div className="space-y-2">
+                  <p className="text-xs text-slate-400">درخواست‌های ارسالی شما</p>
+                  <div className="space-y-1">
+                    {outgoingRequests.map((target) => (
+                      <div
+                        key={target}
+                        className="flex items-center justify-between rounded-md border border-slate-700 px-2 py-1.5"
+                        data-testid={`friends-outgoing-row-${target}`}
+                      >
+                        <p className="text-xs text-slate-300">{target}</p>
+                        <button
+                          type="button"
+                          onClick={() => onCancelOutgoingRequest(target)}
+                          disabled={friendsLoading}
+                          data-testid={`friends-cancel-request-${target}`}
+                          className="rounded-md border border-slate-500 px-2 py-1 text-xs text-slate-200 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          لغو
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 </div>
-              ))
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <p className="text-xs text-slate-400">لیست دوستان</p>
-            {friends.length === 0 ? (
-              <p className="text-xs text-slate-500" data-testid="friends-list-empty">
-                هنوز دوستی اضافه نشده است.
-              </p>
-            ) : (
-              <ul className="space-y-1" data-testid="friends-list">
-                {friends.map((friend) => (
-                  <li key={friend} className="rounded-md border border-slate-700 px-2 py-1.5 text-sm text-slate-100">
-                    {friend}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-
-          {outgoingRequests.length > 0 ? (
-            <div className="space-y-2">
-              <p className="text-xs text-slate-400">درخواست‌های ارسالی شما</p>
-              <div className="space-y-1">
-                {outgoingRequests.map((target) => (
-                  <p key={target} className="text-xs text-slate-300">
-                    {target}
-                  </p>
-                ))}
-              </div>
+              ) : null}
             </div>
-          ) : null}
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-slate-200">نوتیف‌ها</p>
+                <button
+                  type="button"
+                  onClick={() => onMarkNotificationsRead()}
+                  disabled={friendsLoading || notifications.length === 0}
+                  data-testid="notifications-mark-all-read"
+                  className="rounded-md border border-slate-500 px-2 py-1 text-xs text-slate-200 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  علامت خوانده‌شده برای همه
+                </button>
+              </div>
+              {notifications.length === 0 ? (
+                <p className="text-xs text-slate-500" data-testid="notifications-empty">
+                  هنوز نوتیفی وجود ندارد.
+                </p>
+              ) : (
+                <div className="space-y-2" data-testid="notifications-list">
+                  {notifications.map((notification) => (
+                    <button
+                      type="button"
+                      key={notification.id}
+                      onClick={() => {
+                        if (!notification.read) {
+                          onMarkNotificationsRead([notification.id])
+                        }
+                      }}
+                      data-testid={`notification-item-${notification.id}`}
+                      className={[
+                        'w-full rounded-md border px-3 py-2 text-right transition',
+                        notification.read
+                          ? 'border-slate-700 bg-slate-900/70 text-slate-300'
+                          : 'border-cyan-500/50 bg-cyan-500/10 text-cyan-100',
+                      ].join(' ')}
+                    >
+                      <p className="text-sm">{notification.message}</p>
+                      <p className="mt-1 text-[11px] text-slate-400">{formatNotificationTime(notification.createdAt)}</p>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </section>
     )
@@ -518,6 +675,7 @@ export function HomeShell() {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<FooterTab>('home')
   const [profileMode, setProfileMode] = useState<ProfileMode>('login')
+  const [activePanel, setActivePanel] = useState<ProfilePanel>('friends')
   const [profileName, setProfileName] = useState('')
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [draftName, setDraftName] = useState('')
@@ -532,6 +690,8 @@ export function HomeShell() {
   const [incomingRequests, setIncomingRequests] = useState<string[]>([])
   const [outgoingRequests, setOutgoingRequests] = useState<string[]>([])
   const [incomingRequestCount, setIncomingRequestCount] = useState(0)
+  const [notifications, setNotifications] = useState<NotificationItem[]>([])
+  const [notificationUnreadCount, setNotificationUnreadCount] = useState(0)
   const [friendSearchQuery, setFriendSearchQuery] = useState('')
   const [friendSearchResults, setFriendSearchResults] = useState<Array<{ username: string; relation: FriendRelation }>>([])
   const [friendsLoading, setFriendsLoading] = useState(false)
@@ -550,6 +710,9 @@ export function HomeShell() {
     setIncomingRequests([])
     setOutgoingRequests([])
     setIncomingRequestCount(0)
+    setNotifications([])
+    setNotificationUnreadCount(0)
+    setActivePanel('friends')
     setFriendSearchQuery('')
     setFriendSearchResults([])
     if (message) {
@@ -585,6 +748,37 @@ export function HomeShell() {
     } catch {
       if (!silent) {
         setBannerMessage('خطا در دریافت اطلاعات دوستان.')
+      }
+      return false
+    }
+  }, [clearAuthState])
+
+  const loadNotifications = useCallback(async (username: string, silent = false): Promise<boolean> => {
+    const normalized = username.trim()
+    if (!normalized) {
+      return false
+    }
+
+    try {
+      const response = await fetch(`/api/profile/notifications?username=${encodeURIComponent(normalized)}`)
+      const payload = await parseJsonSafe(response)
+      if (!response.ok) {
+        if (payload.error?.code === 'USER_NOT_FOUND') {
+          clearAuthState('برای ادامه دوباره وارد حساب کاربری شوید.')
+          return false
+        }
+        if (!silent) {
+          setBannerMessage(payload.error?.message ?? 'دریافت نوتیف‌ها انجام نشد.')
+        }
+        return false
+      }
+
+      setNotifications(payload.notifications ?? [])
+      setNotificationUnreadCount(payload.unreadCount ?? 0)
+      return true
+    } catch {
+      if (!silent) {
+        setBannerMessage('خطا در دریافت نوتیف‌ها.')
       }
       return false
     }
@@ -633,10 +827,13 @@ export function HomeShell() {
       setIncomingRequests([])
       setOutgoingRequests([])
       setIncomingRequestCount(0)
+      setNotifications([])
+      setNotificationUnreadCount(0)
       return
     }
     void loadFriendsOverview(profileName, true)
-  }, [isAuthenticated, loadFriendsOverview, profileName])
+    void loadNotifications(profileName, true)
+  }, [isAuthenticated, loadFriendsOverview, loadNotifications, profileName])
 
   useEffect(() => {
     if (!isAuthenticated || !profileName.trim()) {
@@ -645,10 +842,11 @@ export function HomeShell() {
 
     const interval = setInterval(() => {
       void loadFriendsOverview(profileName, true)
+      void loadNotifications(profileName, true)
     }, 3000)
 
     return () => clearInterval(interval)
-  }, [isAuthenticated, loadFriendsOverview, profileName])
+  }, [isAuthenticated, loadFriendsOverview, loadNotifications, profileName])
 
   useEffect(() => {
     if (!isAuthenticated || !profileName.trim() || friendSearchQuery.trim().length < 2) {
@@ -912,6 +1110,107 @@ export function HomeShell() {
     }
   }
 
+  const handleCancelOutgoingRequest = async (toUsername: string) => {
+    const username = profileName.trim()
+    if (!username) {
+      setBannerMessage('ابتدا وارد حساب کاربری شوید.')
+      return
+    }
+
+    setFriendsLoading(true)
+    setBannerMessage(null)
+    try {
+      const response = await fetch('/api/profile/friends/cancel-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username,
+          toUsername,
+        }),
+      })
+      const payload = await parseJsonSafe(response)
+      if (!response.ok) {
+        setBannerMessage(payload.error?.message ?? 'لغو درخواست دوستی انجام نشد.')
+        return
+      }
+
+      await loadFriendsOverview(username, true)
+      await searchUsers(username, friendSearchQuery)
+      setBannerMessage(`درخواست ارسالی به ${toUsername} لغو شد.`)
+    } catch {
+      setBannerMessage('خطا در لغو درخواست دوستی.')
+    } finally {
+      setFriendsLoading(false)
+    }
+  }
+
+  const handleRemoveFriend = async (friendUsername: string) => {
+    const username = profileName.trim()
+    if (!username) {
+      setBannerMessage('ابتدا وارد حساب کاربری شوید.')
+      return
+    }
+
+    setFriendsLoading(true)
+    setBannerMessage(null)
+    try {
+      const response = await fetch('/api/profile/friends/remove', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username,
+          friendUsername,
+        }),
+      })
+      const payload = await parseJsonSafe(response)
+      if (!response.ok) {
+        setBannerMessage(payload.error?.message ?? 'حذف دوست انجام نشد.')
+        return
+      }
+
+      await loadFriendsOverview(username, true)
+      await searchUsers(username, friendSearchQuery)
+      setBannerMessage(`${friendUsername} از لیست دوستان حذف شد.`)
+    } catch {
+      setBannerMessage('خطا در حذف دوست.')
+    } finally {
+      setFriendsLoading(false)
+    }
+  }
+
+  const handleMarkNotificationsRead = async (notificationIds?: string[]) => {
+    const username = profileName.trim()
+    if (!username) {
+      return
+    }
+
+    setFriendsLoading(true)
+    try {
+      const response = await fetch('/api/profile/notifications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username,
+          notificationIds: notificationIds ?? [],
+        }),
+      })
+      const payload = await parseJsonSafe(response)
+      if (!response.ok) {
+        setBannerMessage(payload.error?.message ?? 'به‌روزرسانی نوتیف‌ها انجام نشد.')
+        return
+      }
+
+      if (typeof payload.unreadCount === 'number') {
+        setNotificationUnreadCount(payload.unreadCount)
+      }
+      await loadNotifications(username, true)
+    } catch {
+      setBannerMessage('خطا در به‌روزرسانی نوتیف‌ها.')
+    } finally {
+      setFriendsLoading(false)
+    }
+  }
+
   return (
     <main className="flex min-h-screen flex-col bg-gradient-to-b from-slate-950 to-slate-900 text-slate-100" dir="rtl">
       <div className="flex flex-1 items-center justify-center px-4 py-8">
@@ -969,6 +1268,13 @@ export function HomeShell() {
               friendSearchResults={friendSearchResults}
               onSendFriendRequest={handleSendFriendRequest}
               onRespondFriendRequest={handleRespondFriendRequest}
+              onCancelOutgoingRequest={handleCancelOutgoingRequest}
+              onRemoveFriend={handleRemoveFriend}
+              activePanel={activePanel}
+              onPanelChange={setActivePanel}
+              notifications={notifications}
+              notificationUnreadCount={notificationUnreadCount}
+              onMarkNotificationsRead={handleMarkNotificationsRead}
               friendsLoading={friendsLoading}
             />
           ) : null}

@@ -1,5 +1,21 @@
 import { createHash } from 'crypto'
 
+type FriendRelation = 'none' | 'friend' | 'incoming' | 'outgoing'
+type NotificationType =
+  | 'friend_request_received'
+  | 'friend_request_accepted'
+  | 'friend_request_rejected'
+  | 'friend_request_canceled'
+  | 'friend_removed'
+
+interface ProfileNotification {
+  id: string
+  type: NotificationType
+  actor: string
+  createdAt: number
+  read: boolean
+}
+
 interface RegisteredUser {
   username: string
   passwordHash: string
@@ -7,6 +23,16 @@ interface RegisteredUser {
   friends: string[]
   incomingRequests: string[]
   outgoingRequests: string[]
+  notifications: ProfileNotification[]
+}
+
+interface NotificationView {
+  id: string
+  type: NotificationType
+  actorUsername: string
+  message: string
+  createdAt: number
+  read: boolean
 }
 
 class ProfileApiError extends Error {
@@ -31,6 +57,10 @@ class UserStore {
     return createHash('sha256').update(password).digest('hex')
   }
 
+  private generateNotificationId(): string {
+    return `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`
+  }
+
   private ensureSocialState(user: RegisteredUser): void {
     if (!Array.isArray(user.friends)) {
       user.friends = []
@@ -40,6 +70,9 @@ class UserStore {
     }
     if (!Array.isArray(user.outgoingRequests)) {
       user.outgoingRequests = []
+    }
+    if (!Array.isArray(user.notifications)) {
+      user.notifications = []
     }
   }
 
@@ -102,6 +135,49 @@ class UserStore {
       .sort((left, right) => left.localeCompare(right))
   }
 
+  private addNotification(target: RegisteredUser, type: NotificationType, actor: string): void {
+    this.ensureSocialState(target)
+    target.notifications.unshift({
+      id: this.generateNotificationId(),
+      type,
+      actor,
+      createdAt: Date.now(),
+      read: false,
+    })
+    // Keep the notifications bounded to prevent unbounded memory growth.
+    if (target.notifications.length > 200) {
+      target.notifications = target.notifications.slice(0, 200)
+    }
+  }
+
+  private getNotificationMessage(type: NotificationType, actorUsername: string): string {
+    if (type === 'friend_request_received') {
+      return `${actorUsername} برای شما درخواست دوستی فرستاد.`
+    }
+    if (type === 'friend_request_accepted') {
+      return `${actorUsername} درخواست دوستی شما را تایید کرد.`
+    }
+    if (type === 'friend_request_rejected') {
+      return `${actorUsername} درخواست دوستی شما را رد کرد.`
+    }
+    if (type === 'friend_request_canceled') {
+      return `${actorUsername} درخواست دوستی ارسال‌شده را لغو کرد.`
+    }
+    return `${actorUsername} شما را از لیست دوستان حذف کرد.`
+  }
+
+  private toNotificationView(notification: ProfileNotification): NotificationView {
+    const actorUsername = this.getDisplayUsername(notification.actor) ?? 'کاربر ناشناس'
+    return {
+      id: notification.id,
+      type: notification.type,
+      actorUsername,
+      message: this.getNotificationMessage(notification.type, actorUsername),
+      createdAt: notification.createdAt,
+      read: notification.read,
+    }
+  }
+
   register(input: { username: string; password: string; confirmPassword: string }): { username: string } {
     const username = input.username.trim()
     const password = input.password
@@ -130,6 +206,7 @@ class UserStore {
       friends: [],
       incomingRequests: [],
       outgoingRequests: [],
+      notifications: [],
     })
 
     return { username }
@@ -190,6 +267,11 @@ class UserStore {
       this.replaceValue(storedUser.friends, normalizedCurrent, normalizedNext)
       this.replaceValue(storedUser.incomingRequests, normalizedCurrent, normalizedNext)
       this.replaceValue(storedUser.outgoingRequests, normalizedCurrent, normalizedNext)
+      storedUser.notifications.forEach((notification) => {
+        if (notification.actor === normalizedCurrent) {
+          notification.actor = normalizedNext
+        }
+      })
     })
 
     return { username: newUsername }
@@ -259,11 +341,8 @@ class UserStore {
     }
   }
 
-  searchUsers(input: {
-    username: string
-    query: string
-  }): {
-    users: Array<{ username: string; relation: 'none' | 'friend' | 'incoming' | 'outgoing' }>
+  searchUsers(input: { username: string; query: string }): {
+    users: Array<{ username: string; relation: FriendRelation }>
   } {
     const normalized = this.normalizeUsername(input.username)
     const query = input.query.trim().toLowerCase()
@@ -275,7 +354,7 @@ class UserStore {
     }
 
     const user = this.getUserByNormalizedUsername(normalized)
-    const results: Array<{ username: string; relation: 'none' | 'friend' | 'incoming' | 'outgoing' }> = []
+    const results: Array<{ username: string; relation: FriendRelation }> = []
 
     this.usersByName.forEach((candidate, candidateNormalized) => {
       this.ensureSocialState(candidate)
@@ -286,7 +365,7 @@ class UserStore {
         return
       }
 
-      let relation: 'none' | 'friend' | 'incoming' | 'outgoing' = 'none'
+      let relation: FriendRelation = 'none'
       if (user.friends.includes(candidateNormalized)) {
         relation = 'friend'
       } else if (user.incomingRequests.includes(candidateNormalized)) {
@@ -299,14 +378,13 @@ class UserStore {
     })
 
     results.sort((left, right) => left.username.localeCompare(right.username))
-    return {
-      users: results.slice(0, 20),
-    }
+    return { users: results.slice(0, 20) }
   }
 
   sendFriendRequest(input: { fromUsername: string; toUsername: string }): { toUsername: string } {
     const fromNormalized = this.normalizeUsername(input.fromUsername)
     const toNormalized = this.normalizeUsername(input.toUsername)
+
     if (!fromNormalized || !toNormalized) {
       throw new ProfileApiError(400, 'INVALID_USERNAME', 'نام کاربری فرستنده و گیرنده الزامی است.')
     }
@@ -320,18 +398,23 @@ class UserStore {
     if (fromUser.friends.includes(toNormalized)) {
       throw new ProfileApiError(409, 'ALREADY_FRIENDS', 'این کاربر از قبل در لیست دوستان شما است.')
     }
+    if (fromUser.outgoingRequests.includes(toNormalized)) {
+      throw new ProfileApiError(409, 'REQUEST_ALREADY_SENT', 'درخواست دوستی قبلاً ارسال شده است.')
+    }
 
-    // If the target user already requested friendship, accept both sides automatically.
+    // If target had already requested friendship, resolve instantly as accepted.
     if (fromUser.incomingRequests.includes(toNormalized)) {
       this.removeValue(fromUser.incomingRequests, toNormalized)
       this.removeValue(toUser.outgoingRequests, fromNormalized)
       this.pushUnique(fromUser.friends, toNormalized)
       this.pushUnique(toUser.friends, fromNormalized)
+      this.addNotification(toUser, 'friend_request_accepted', fromNormalized)
       return { toUsername: toUser.username }
     }
 
     this.pushUnique(fromUser.outgoingRequests, toNormalized)
     this.pushUnique(toUser.incomingRequests, fromNormalized)
+    this.addNotification(toUser, 'friend_request_received', fromNormalized)
     return { toUsername: toUser.username }
   }
 
@@ -364,9 +447,102 @@ class UserStore {
     if (action === 'accept') {
       this.pushUnique(user.friends, fromNormalized)
       this.pushUnique(sender.friends, usernameNormalized)
+      this.addNotification(sender, 'friend_request_accepted', usernameNormalized)
+    } else {
+      this.addNotification(sender, 'friend_request_rejected', usernameNormalized)
     }
 
     return { fromUsername: sender.username, action }
+  }
+
+  cancelOutgoingRequest(input: { username: string; toUsername: string }): { toUsername: string } {
+    const usernameNormalized = this.normalizeUsername(input.username)
+    const targetNormalized = this.normalizeUsername(input.toUsername)
+
+    if (!usernameNormalized || !targetNormalized) {
+      throw new ProfileApiError(400, 'INVALID_USERNAME', 'نام کاربری فرستنده و گیرنده الزامی است.')
+    }
+
+    const user = this.getUserByNormalizedUsername(usernameNormalized)
+    const target = this.getUserByNormalizedUsername(targetNormalized)
+
+    if (!user.outgoingRequests.includes(targetNormalized)) {
+      throw new ProfileApiError(404, 'REQUEST_NOT_FOUND', 'درخواست دوستی ارسالی پیدا نشد.')
+    }
+
+    this.removeValue(user.outgoingRequests, targetNormalized)
+    this.removeValue(target.incomingRequests, usernameNormalized)
+    target.notifications = target.notifications.filter(
+      (notification) => !(notification.type === 'friend_request_received' && notification.actor === usernameNormalized)
+    )
+    this.addNotification(target, 'friend_request_canceled', usernameNormalized)
+
+    return { toUsername: target.username }
+  }
+
+  removeFriend(input: { username: string; friendUsername: string }): { friendUsername: string } {
+    const usernameNormalized = this.normalizeUsername(input.username)
+    const friendNormalized = this.normalizeUsername(input.friendUsername)
+
+    if (!usernameNormalized || !friendNormalized) {
+      throw new ProfileApiError(400, 'INVALID_USERNAME', 'نام کاربری شما و دوستتان الزامی است.')
+    }
+    if (usernameNormalized === friendNormalized) {
+      throw new ProfileApiError(400, 'INVALID_REQUEST', 'این عملیات برای خود کاربر ممکن نیست.')
+    }
+
+    const user = this.getUserByNormalizedUsername(usernameNormalized)
+    const friend = this.getUserByNormalizedUsername(friendNormalized)
+
+    if (!user.friends.includes(friendNormalized)) {
+      throw new ProfileApiError(404, 'FRIEND_NOT_FOUND', 'این کاربر در لیست دوستان شما نیست.')
+    }
+
+    this.removeValue(user.friends, friendNormalized)
+    this.removeValue(friend.friends, usernameNormalized)
+    this.addNotification(friend, 'friend_removed', usernameNormalized)
+    this.addNotification(user, 'friend_removed', friendNormalized)
+
+    return { friendUsername: friend.username }
+  }
+
+  getNotifications(input: { username: string }): { username: string; unreadCount: number; notifications: NotificationView[] } {
+    const normalized = this.normalizeUsername(input.username)
+    if (!normalized) {
+      throw new ProfileApiError(400, 'INVALID_USERNAME', 'نام کاربری الزامی است.')
+    }
+
+    const user = this.getUserByNormalizedUsername(normalized)
+    const notifications = [...user.notifications]
+      .sort((left, right) => right.createdAt - left.createdAt)
+      .map((notification) => this.toNotificationView(notification))
+    const unreadCount = notifications.filter((notification) => !notification.read).length
+
+    return {
+      username: user.username,
+      unreadCount,
+      notifications,
+    }
+  }
+
+  markNotificationsRead(input: { username: string; notificationIds?: string[] }): { unreadCount: number } {
+    const normalized = this.normalizeUsername(input.username)
+    if (!normalized) {
+      throw new ProfileApiError(400, 'INVALID_USERNAME', 'نام کاربری الزامی است.')
+    }
+
+    const user = this.getUserByNormalizedUsername(normalized)
+    const ids = input.notificationIds ?? []
+    const markAll = ids.length === 0
+
+    user.notifications.forEach((notification) => {
+      if (markAll || ids.includes(notification.id)) {
+        notification.read = true
+      }
+    })
+
+    const unreadCount = user.notifications.filter((notification) => !notification.read).length
+    return { unreadCount }
   }
 }
 
