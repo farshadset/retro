@@ -49,6 +49,31 @@ class UserStore {
 
     return { username }
   }
+
+  login(input: { username: string; password: string }): { username: string } {
+    const username = input.username.trim()
+    const password = input.password
+
+    if (!username) {
+      throw new ProfileApiError(400, 'INVALID_USERNAME', 'نام کاربری الزامی است.')
+    }
+    if (!password) {
+      throw new ProfileApiError(400, 'INVALID_PASSWORD', 'رمز عبور الزامی است.')
+    }
+
+    const normalized = username.toLowerCase()
+    const user = this.usersByName.get(normalized)
+    if (!user) {
+      throw new ProfileApiError(401, 'INVALID_CREDENTIALS', 'نام کاربری یا رمز عبور اشتباه است.')
+    }
+
+    const passwordHash = createHash('sha256').update(password).digest('hex')
+    if (user.passwordHash !== passwordHash) {
+      throw new ProfileApiError(401, 'INVALID_CREDENTIALS', 'نام کاربری یا رمز عبور اشتباه است.')
+    }
+
+    return { username: user.username }
+  }
 }
 
 declare global {

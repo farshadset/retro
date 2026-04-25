@@ -77,6 +77,8 @@ function HomeContent({
 }
 
 function ProfileContent({
+  mode,
+  onModeChange,
   profileName,
   draftName,
   password,
@@ -84,9 +86,11 @@ function ProfileContent({
   onDraftNameChange,
   onPasswordChange,
   onConfirmPasswordChange,
-  onSave,
+  onSubmit,
   isSubmitting,
 }: {
+  mode: 'login' | 'register'
+  onModeChange: (mode: 'login' | 'register') => void
   profileName: string
   draftName: string
   password: string
@@ -94,15 +98,41 @@ function ProfileContent({
   onDraftNameChange: (value: string) => void
   onPasswordChange: (value: string) => void
   onConfirmPasswordChange: (value: string) => void
-  onSave: () => void
+  onSubmit: () => void
   isSubmitting: boolean
 }) {
+  const isRegisterMode = mode === 'register'
+
   return (
     <section className="w-full max-w-md space-y-4 rounded-2xl border border-slate-700 bg-slate-900/70 p-5 shadow-lg">
-      <h2 className="text-center text-xl font-bold text-slate-100">پروفایل</h2>
+      <h2 className="text-center text-xl font-bold text-slate-100">ورود / ثبت‌نام</h2>
       <p className="text-center text-sm text-slate-300">
-        نام کاربری‌ات را ثبت کن تا در بازی آنلاین با همین نام دیده شوی.
+        برای بازی با نام کاربری خودت، ابتدا وارد شو یا حساب جدید بساز.
       </p>
+      <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-950/60 p-1">
+        <button
+          type="button"
+          onClick={() => onModeChange('login')}
+          data-testid="profile-mode-login"
+          className={[
+            'rounded-lg px-3 py-2 text-sm font-semibold transition',
+            !isRegisterMode ? 'bg-cyan-400 text-slate-950' : 'text-slate-200 hover:bg-slate-800',
+          ].join(' ')}
+        >
+          ورود
+        </button>
+        <button
+          type="button"
+          onClick={() => onModeChange('register')}
+          data-testid="profile-mode-register"
+          className={[
+            'rounded-lg px-3 py-2 text-sm font-semibold transition',
+            isRegisterMode ? 'bg-cyan-400 text-slate-950' : 'text-slate-200 hover:bg-slate-800',
+          ].join(' ')}
+        >
+          ثبت‌نام
+        </button>
+      </div>
       <label className="block space-y-2">
         <span className="text-sm text-slate-200">نام اکانت</span>
         <input
@@ -124,25 +154,27 @@ function ProfileContent({
           placeholder="حداقل ۶ کاراکتر"
         />
       </label>
-      <label className="block space-y-2">
-        <span className="text-sm text-slate-200">تکرار رمز عبور</span>
-        <input
-          type="password"
-          value={confirmPassword}
-          onChange={(event) => onConfirmPasswordChange(event.target.value)}
-          data-testid="profile-confirm-password-input"
-          className="w-full rounded-xl border border-slate-600 bg-slate-950 px-4 py-3 text-sm text-slate-100 outline-none ring-cyan-400 transition focus:ring-2"
-          placeholder="دوباره وارد کنید"
-        />
-      </label>
+      {isRegisterMode ? (
+        <label className="block space-y-2">
+          <span className="text-sm text-slate-200">تکرار رمز عبور</span>
+          <input
+            type="password"
+            value={confirmPassword}
+            onChange={(event) => onConfirmPasswordChange(event.target.value)}
+            data-testid="profile-confirm-password-input"
+            className="w-full rounded-xl border border-slate-600 bg-slate-950 px-4 py-3 text-sm text-slate-100 outline-none ring-cyan-400 transition focus:ring-2"
+            placeholder="دوباره وارد کنید"
+          />
+        </label>
+      ) : null}
       <button
         type="button"
-        onClick={onSave}
+        onClick={onSubmit}
         disabled={isSubmitting}
-        data-testid="profile-save-btn"
+        data-testid={isRegisterMode ? 'profile-register-btn' : 'profile-login-btn'}
         className="w-full rounded-xl bg-cyan-400 px-4 py-3 text-sm font-bold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {isSubmitting ? 'در حال ثبت...' : 'ثبت نام / ذخیره پروفایل'}
+        {isSubmitting ? 'در حال پردازش...' : isRegisterMode ? 'ثبت‌نام' : 'ورود'}
       </button>
       {profileName ? (
         <p className="rounded-lg bg-emerald-500/15 px-3 py-2 text-center text-sm text-emerald-200" data-testid="profile-current-name">
@@ -165,6 +197,7 @@ function PlaceholderContent({ title }: { title: string }) {
 export function HomeShell() {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<FooterTab>('home')
+  const [profileMode, setProfileMode] = useState<'login' | 'register'>('login')
   const [profileName, setProfileName] = useState('')
   const [draftName, setDraftName] = useState('')
   const [password, setPassword] = useState('')
@@ -217,7 +250,7 @@ export function HomeShell() {
       setBannerMessage('رمز عبور باید حداقل ۶ کاراکتر باشد.')
       return
     }
-    if (password !== confirmPassword) {
+    if (profileMode === 'register' && password !== confirmPassword) {
       setBannerMessage('تکرار رمز عبور با رمز عبور یکسان نیست.')
       return
     }
@@ -225,18 +258,26 @@ export function HomeShell() {
     setIsRegistering(true)
     setBannerMessage(null)
     try {
-      const response = await fetch('/api/profile/register', {
+      const endpoint = profileMode === 'register' ? '/api/profile/register' : '/api/profile/login'
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: normalized,
-          password,
-          confirmPassword,
-        }),
+        body: JSON.stringify(
+          profileMode === 'register'
+            ? {
+                username: normalized,
+                password,
+                confirmPassword,
+              }
+            : {
+                username: normalized,
+                password,
+              }
+        ),
       })
       const payload = await parseJsonSafe(response)
       if (!response.ok) {
-        setBannerMessage(payload.error?.message ?? 'ثبت نام انجام نشد.')
+        setBannerMessage(payload.error?.message ?? 'عملیات پروفایل انجام نشد.')
         return
       }
 
@@ -246,9 +287,9 @@ export function HomeShell() {
       setDraftName(savedName)
       setPassword('')
       setConfirmPassword('')
-      setBannerMessage('ثبت نام با موفقیت انجام شد.')
+      setBannerMessage(profileMode === 'register' ? 'ثبت نام با موفقیت انجام شد.' : 'ورود با موفقیت انجام شد.')
     } catch {
-      setBannerMessage('خطا در ارتباط با سرور ثبت نام.')
+      setBannerMessage('خطا در ارتباط با سرور پروفایل.')
     } finally {
       setIsRegistering(false)
     }
@@ -272,10 +313,17 @@ export function HomeShell() {
           ) : null}
           {activeTab === 'profile' ? (
             <ProfileContent
+              mode={profileMode}
+              onModeChange={(mode) => {
+                setProfileMode(mode)
+                setPassword('')
+                setConfirmPassword('')
+                setBannerMessage(null)
+              }}
               profileName={profileName}
               draftName={draftName}
               onDraftNameChange={setDraftName}
-              onSave={handleSaveProfile}
+              onSubmit={handleSaveProfile}
               password={password}
               confirmPassword={confirmPassword}
               onPasswordChange={setPassword}
