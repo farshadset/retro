@@ -35,6 +35,10 @@ interface NotificationView {
   read: boolean
 }
 
+export interface UserStoreSnapshot {
+  users: Array<{ normalizedUsername: string; user: RegisteredUser }>
+}
+
 class ProfileApiError extends Error {
   status: number
   code: string
@@ -48,6 +52,60 @@ class ProfileApiError extends Error {
 
 class UserStore {
   private usersByName = new Map<string, RegisteredUser>()
+
+  private cloneNotifications(notifications: ProfileNotification[]): ProfileNotification[] {
+    return notifications.map((notification) => ({
+      id: notification.id,
+      type: notification.type,
+      actor: notification.actor,
+      createdAt: notification.createdAt,
+      read: notification.read,
+    }))
+  }
+
+  private cloneRegisteredUser(user: RegisteredUser): RegisteredUser {
+    return {
+      username: user.username,
+      passwordHash: user.passwordHash,
+      createdAt: user.createdAt,
+      friends: [...user.friends],
+      incomingRequests: [...user.incomingRequests],
+      outgoingRequests: [...user.outgoingRequests],
+      notifications: this.cloneNotifications(user.notifications),
+    }
+  }
+
+  exportSnapshot(): UserStoreSnapshot {
+    const users: Array<{ normalizedUsername: string; user: RegisteredUser }> = []
+    this.usersByName.forEach((user, normalizedUsername) => {
+      this.ensureSocialState(user)
+      users.push({
+        normalizedUsername,
+        user: this.cloneRegisteredUser(user),
+      })
+    })
+    return { users }
+  }
+
+  importSnapshot(snapshot: UserStoreSnapshot): void {
+    this.usersByName.clear()
+    if (!snapshot || !Array.isArray(snapshot.users)) {
+      return
+    }
+
+    snapshot.users.forEach((record) => {
+      if (!record || typeof record.normalizedUsername !== 'string' || !record.user) {
+        return
+      }
+      const normalized = this.normalizeUsername(record.normalizedUsername)
+      if (!normalized) {
+        return
+      }
+      const cloned = this.cloneRegisteredUser(record.user)
+      this.ensureSocialState(cloned)
+      this.usersByName.set(normalized, cloned)
+    })
+  }
 
   private normalizeUsername(username: string): string {
     return username.trim().toLowerCase()

@@ -31,6 +31,8 @@ interface FooterItem {
 }
 
 interface ApiResponse {
+  status?: string
+  persistence?: string
   user?: { username: string }
   friends?: string[]
   incomingRequests?: string[]
@@ -710,6 +712,7 @@ export function HomeShell() {
   const [bannerMessage, setBannerMessage] = useState<string | null>(null)
   const [isStartingOnline, setIsStartingOnline] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [storageReady, setStorageReady] = useState(false)
 
   const clearAuthState = useCallback((message?: string) => {
     localStorage.removeItem(PROFILE_USERNAME_STORAGE_KEY)
@@ -838,6 +841,30 @@ export function HomeShell() {
   }, [])
 
   useEffect(() => {
+    let cancelled = false
+
+    const checkStorage = async () => {
+      try {
+        const response = await fetch('/api/profile?action=health')
+        const payload = await parseJsonSafe(response)
+        if (!cancelled) {
+          setStorageReady(response.ok && payload.status === 'ok')
+        }
+      } catch {
+        if (!cancelled) {
+          setStorageReady(false)
+        }
+      }
+    }
+
+    void checkStorage()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
     if (!isAuthenticated || !profileName.trim()) {
       setFriends([])
       setIncomingRequests([])
@@ -909,6 +936,10 @@ export function HomeShell() {
   }
 
   const handleSubmitAuth = async () => {
+    if (!storageReady) {
+      setBannerMessage('ذخیره‌سازی پایدار حساب کاربری روی سرور فعال نیست. لطفاً به ادمین اطلاع دهید.')
+      return
+    }
     const normalized = draftName.trim()
     if (normalized.length < 3) {
       setBannerMessage('نام اکانت باید حداقل ۳ کاراکتر باشد.')
