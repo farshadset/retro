@@ -10,10 +10,17 @@ import { PlayerColor, RoomSession, RoomSnapshot, RoomStatus } from '@/lib/chess/
 
 type Mode = 'lobby' | 'playing'
 type JoinMode = 'create' | 'join'
+type PromotionPiece = 'q' | 'r' | 'b' | 'n'
 
 interface StoredSession {
   roomId: string
   session: RoomSession
+}
+
+interface PendingPromotion {
+  from: Square
+  to: Square
+  options: PromotionPiece[]
 }
 
 const SESSION_STORAGE_KEY = 'realtime-chess-session'
@@ -69,6 +76,7 @@ export function ChessRoom() {
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null)
   const [moveTargets, setMoveTargets] = useState<Square[]>([])
   const [isMakingMove, setIsMakingMove] = useState(false)
+  const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null)
   const [nowTick, setNowTick] = useState(Date.now())
   const eventSourceRef = useRef<EventSource | null>(null)
   const clockIntervalRef = useRef<number | null>(null)
@@ -94,6 +102,31 @@ export function ChessRoom() {
     setSelectedSquare(null)
     setMoveTargets([])
   }, [])
+
+  const submitMove = useCallback(
+    async (move: { from: Square; to: Square; promotion?: PromotionPiece }) => {
+      if (!snapshot || !session) return
+      setIsMakingMove(true)
+      try {
+        const response = await makeMove({
+          roomId: snapshot.roomId,
+          token: session.token,
+          from: move.from,
+          to: move.to,
+          promotion: move.promotion,
+        })
+        setSnapshot(response.snapshot)
+        setError(null)
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : 'Move failed.')
+      } finally {
+        setIsMakingMove(false)
+        clearSelection()
+        setPendingPromotion(null)
+      }
+    },
+    [clearSelection, session, snapshot]
+  )
 
   const persistSession = useCallback((nextRoomId: string, nextSession: RoomSession) => {
     const payload: StoredSession = { roomId: nextRoomId, session: nextSession }
@@ -205,6 +238,7 @@ export function ChessRoom() {
 
   useEffect(() => {
     clearSelection()
+    setPendingPromotion(null)
   }, [snapshot?.fen, clearSelection])
 
   const handleCreateRoom = async () => {
@@ -256,6 +290,7 @@ export function ChessRoom() {
   const handleSquareClick = async (square: Square) => {
     if (!snapshot || !session || !reconstructedChess) return
     if (!session.color || snapshot.status !== 'active' || snapshot.turn !== session.color) return
+    if (pendingPromotion) return
 
     if (!selectedSquare) {
       const piece = reconstructedChess.get(square)
@@ -287,27 +322,35 @@ export function ChessRoom() {
       return
     }
 
-    setIsMakingMove(true)
-    try {
-      const legalMove = reconstructedChess
-        .moves({ square: selectedSquare, verbose: true })
-        .find((move) => move.to === square)
-      const promotion = legalMove?.promotion as 'q' | 'r' | 'b' | 'n' | undefined
-      const response = await makeMove({
-        roomId: snapshot.roomId,
-        token: session.token,
+    const matchingMoves = reconstructedChess
+      .moves({ square: selectedSquare, verbose: true })
+      .filter((move) => move.to === square)
+    const promotionOptions = matchingMoves
+      .map((move) => move.promotion as PromotionPiece | undefined)
+      .filter((promotion): promotion is PromotionPiece => Boolean(promotion))
+    const uniquePromotionOptions = Array.from(new Set(promotionOptions))
+    if (uniquePromotionOptions.length > 0) {
+      setPendingPromotion({
         from: selectedSquare,
         to: square,
-        promotion,
+        options: uniquePromotionOptions,
       })
-      setSnapshot(response.snapshot)
-      setError(null)
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Move failed.')
-    } finally {
-      setIsMakingMove(false)
-      clearSelection()
+      return
     }
+    await submitMove({
+      from: selectedSquare,
+      to: square,
+      promotion: uniquePromotionOptions[0],
+    })
+  }
+
+  const handlePromotionChoice = async (promotion: PromotionPiece) => {
+    if (!pendingPromotion) return
+    await submitMove({
+      from: pendingPromotion.from,
+      to: pendingPromotion.to,
+      promotion,
+    })
   }
 
   const handleResign = async () => {
@@ -500,12 +543,51 @@ export function ChessRoom() {
                 ? isPlayerTurn
                   ? isMakingMove
                     ? 'Submitting your move...'
+                    : pendingPromotion
+                      ? 'Choose promotion piece'
                     : 'Your turn'
                   : hydratedSnapshot.status === 'active'
                     ? "Opponent's turn"
                     : 'Game finished'
                 : 'Spectator mode'}
             </p>
+            {pendingPromotion ? (
+              <section className="w-full max-w-[min(96vw,680px)] rounded-md border border-[#3a3734] bg-[#262421] p-3">
+                <p className="mb-3 text-sm font-semibold text-[#f3efe8]" data-testid="promotion-picker-title">
+                  سرباز به آخر رسید؛ انتخاب کن به چه مهره‌ای تبدیل شود:
+                </p>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {pendingPromotion.options.map((promotion) => {
+                    const label =
+                      promotion === 'q'
+                        ? 'وزیر'
+                        : promotion === 'r'
+                          ? 'رخ'
+                          : promotion === 'b'
+                            ? 'فیل'
+                            : 'اسب'
+                    return (
+                      <button
+                        key={promotion}
+                        type="button"
+                        onClick={() => void handlePromotionChoice(promotion)}
+                        data-testid={`promotion-option-${promotion}`}
+                        className="rounded-md border border-cyan-400/40 bg-cyan-500/10 px-3 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-500/20"
+                      >
+                        {label}
+                      </button>
+                    )
+                  })}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPendingPromotion(null)}
+                  className="mt-3 rounded-md border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-800"
+                >
+                  انصراف
+                </button>
+              </section>
+            ) : null}
           </div>
 
           <aside className="flex flex-col gap-4">

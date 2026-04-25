@@ -8,6 +8,13 @@ import { PlayerPanel } from './player-panel'
 import { PlayerColor, RoomSnapshot } from '@/lib/chess/types'
 
 const OFFLINE_ROOM_ID = 'OFFBOT'
+type PromotionPiece = 'q' | 'r' | 'b' | 'n'
+
+interface PendingPromotion {
+  from: Square
+  to: Square
+  options: PromotionPiece[]
+}
 
 function chooseBotMove(chess: Chess) {
   const legalMoves = chess.moves({ verbose: true })
@@ -76,6 +83,7 @@ export function OfflineChessRoom() {
   const [moveTargets, setMoveTargets] = useState<Square[]>([])
   const [error, setError] = useState<string | null>(null)
   const [isBotThinking, setIsBotThinking] = useState(false)
+  const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null)
 
   const chessState = useMemo(() => new Chess(snapshot.fen), [snapshot.fen])
   const isGameActive = snapshot.status === 'active'
@@ -124,7 +132,7 @@ export function OfflineChessRoom() {
   }
 
   const handleSquareClick = (square: Square) => {
-    if (!isPlayerTurn || isBotThinking) return
+    if (!isPlayerTurn || isBotThinking || pendingPromotion) return
 
     if (!selectedSquare) {
       const piece = chessState.get(square)
@@ -150,11 +158,22 @@ export function OfflineChessRoom() {
       return
     }
 
-    const legalMove = chessState
+    const legalMoves = chessState
       .moves({ square: selectedSquare, verbose: true })
-      .find((move) => move.to === square)
-    const promotion = legalMove?.promotion as 'q' | 'r' | 'b' | 'n' | undefined
-    const moveResult = chessState.move({ from: selectedSquare, to: square, promotion })
+      .filter((move) => move.to === square)
+    const promotionOptions = legalMoves
+      .map((move) => move.promotion as PromotionPiece | undefined)
+      .filter((promotion): promotion is PromotionPiece => Boolean(promotion))
+    const uniquePromotionOptions = Array.from(new Set(promotionOptions))
+    if (uniquePromotionOptions.length > 0) {
+      setPendingPromotion({
+        from: selectedSquare,
+        to: square,
+        options: uniquePromotionOptions,
+      })
+      return
+    }
+    const moveResult = chessState.move({ from: selectedSquare, to: square })
     if (!moveResult) {
       setError('Move failed.')
       clearSelection()
@@ -172,6 +191,34 @@ export function OfflineChessRoom() {
     }
   }
 
+  const handlePromotionChoice = (promotion: PromotionPiece) => {
+    if (!pendingPromotion || isBotThinking) return
+    const moveResult = chessState.move({
+      from: pendingPromotion.from,
+      to: pendingPromotion.to,
+      promotion,
+    })
+    if (!moveResult) {
+      setError('Promotion move failed.')
+      setPendingPromotion(null)
+      clearSelection()
+      return
+    }
+    const nextMoves = [...snapshot.moves, moveResult.san]
+    const nextSnapshot = formatSnapshot(
+      chessState,
+      { from: moveResult.from, to: moveResult.to, san: moveResult.san },
+      nextMoves
+    )
+    setSnapshot(nextSnapshot)
+    setError(null)
+    setPendingPromotion(null)
+    clearSelection()
+    if (nextSnapshot.status === 'active') {
+      applyBotMove(chessState, nextMoves)
+    }
+  }
+
   const resetGame = () => {
     if (botTimerRef.current) {
       window.clearTimeout(botTimerRef.current)
@@ -181,6 +228,7 @@ export function OfflineChessRoom() {
     setSnapshot(formatSnapshot(chess, null, []))
     setError(null)
     clearSelection()
+    setPendingPromotion(null)
     setIsBotThinking(false)
   }
 
@@ -234,6 +282,43 @@ export function OfflineChessRoom() {
               highlightedMoves={moveTargets}
               onSquareClick={handleSquareClick}
             />
+            {pendingPromotion ? (
+              <section className="w-full max-w-[min(96vw,680px)] rounded-md border border-[#3a3734] bg-[#262421] p-3">
+                <p className="mb-3 text-sm font-semibold text-[#f3efe8]" data-testid="offline-promotion-picker-title">
+                  سرباز به آخر رسید؛ انتخاب کن به چه مهره‌ای تبدیل شود:
+                </p>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {pendingPromotion.options.map((promotion) => {
+                    const label =
+                      promotion === 'q'
+                        ? 'وزیر'
+                        : promotion === 'r'
+                          ? 'رخ'
+                          : promotion === 'b'
+                            ? 'فیل'
+                            : 'اسب'
+                    return (
+                      <button
+                        key={promotion}
+                        type="button"
+                        onClick={() => handlePromotionChoice(promotion)}
+                        data-testid={`offline-promotion-option-${promotion}`}
+                        className="rounded-md border border-cyan-400/40 bg-cyan-500/10 px-3 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-500/20"
+                      >
+                        {label}
+                      </button>
+                    )
+                  })}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPendingPromotion(null)}
+                  className="mt-3 rounded-md border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-slate-800"
+                >
+                  انصراف
+                </button>
+              </section>
+            ) : null}
           </div>
 
           <aside className="flex flex-col gap-4">
