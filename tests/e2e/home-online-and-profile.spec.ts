@@ -150,6 +150,11 @@ test.describe('Home actions and profile registration', () => {
     await page.getByTestId('offline-play-btn').click()
 
     await expect(page).toHaveURL(/\/offline$/)
+    await expect(page.getByTestId('offline-bot-level-select')).toBeVisible()
+    await expect(page.getByTestId('offline-bot-rating-label')).toContainText('ریتینگ')
+    await page.getByTestId('offline-bot-level-select').selectOption('expert')
+    await expect(page.getByTestId('offline-bot-rating-label')).toContainText('استاد')
+    await expect(page.getByTestId('offline-bot-rating-label')).toContainText('2000')
     await expect(page.getByTestId('offline-status-label')).toContainText('Your turn')
 
     await page.getByTestId('chess-square-e2').click()

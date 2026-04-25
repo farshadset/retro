@@ -8,13 +8,83 @@ import { PlayerPanel } from './player-panel'
 import { PlayerColor, RoomSnapshot } from '@/lib/chess/types'
 
 const OFFLINE_ROOM_ID = 'OFFBOT'
+const OFFLINE_BOT_LEVEL_STORAGE_KEY = 'offline-chess-bot-level'
 type PromotionPiece = 'q' | 'r' | 'b' | 'n'
+type PieceType = 'p' | 'n' | 'b' | 'r' | 'q' | 'k'
+
+interface BotLevel {
+  id: string
+  label: string
+  rating: number
+  thinkTimeMs: number
+  randomDelayMs: number
+  blunderChance: number
+  randomNoise: number
+}
 
 interface PendingPromotion {
   from: Square
   to: Square
   color: 'w' | 'b'
   options: PromotionPiece[]
+}
+
+const BOT_LEVELS: BotLevel[] = [
+  {
+    id: 'beginner',
+    label: 'مبتدی',
+    rating: 400,
+    thinkTimeMs: 280,
+    randomDelayMs: 180,
+    blunderChance: 0.38,
+    randomNoise: 260,
+  },
+  {
+    id: 'easy',
+    label: 'آسان',
+    rating: 800,
+    thinkTimeMs: 340,
+    randomDelayMs: 200,
+    blunderChance: 0.24,
+    randomNoise: 160,
+  },
+  {
+    id: 'medium',
+    label: 'متوسط',
+    rating: 1200,
+    thinkTimeMs: 460,
+    randomDelayMs: 220,
+    blunderChance: 0.12,
+    randomNoise: 90,
+  },
+  {
+    id: 'hard',
+    label: 'سخت',
+    rating: 1600,
+    thinkTimeMs: 580,
+    randomDelayMs: 240,
+    blunderChance: 0.05,
+    randomNoise: 40,
+  },
+  {
+    id: 'expert',
+    label: 'استاد',
+    rating: 2000,
+    thinkTimeMs: 740,
+    randomDelayMs: 280,
+    blunderChance: 0.02,
+    randomNoise: 18,
+  },
+]
+
+const DEFAULT_BOT_LEVEL_ID = BOT_LEVELS[2].id
+const PIECE_VALUES: Record<PieceType, number> = {
+  p: 100,
+  n: 320,
+  b: 330,
+  r: 500,
+  q: 900,
+  k: 0,
 }
 
 const PROMOTION_ICON_BY_COLOR: Record<'w' | 'b', Record<PromotionPiece, string>> = {
@@ -32,14 +102,77 @@ const PROMOTION_ICON_BY_COLOR: Record<'w' | 'b', Record<PromotionPiece, string>>
   },
 }
 
-function chooseBotMove(chess: Chess) {
+function evaluateMaterial(chess: Chess): number {
+  let score = 0
+  for (const rank of chess.board()) {
+    for (const piece of rank) {
+      if (!piece) continue
+      const pieceValue = PIECE_VALUES[piece.type as PieceType] ?? 0
+      score += piece.color === 'b' ? pieceValue : -pieceValue
+    }
+  }
+  return score
+}
+
+function centerBonus(square: string): number {
+  const file = square.charCodeAt(0) - 'a'.charCodeAt(0)
+  const rank = Number(square[1]) - 1
+  const distanceFromCenter = Math.abs(file - 3.5) + Math.abs(rank - 3.5)
+  return Math.round((4 - distanceFromCenter) * 8)
+}
+
+function scoreMove(chess: Chess, move: ReturnType<Chess['moves']>[number], level: BotLevel): number {
+  const candidate = new Chess(chess.fen())
+  const result = candidate.move({
+    from: move.from,
+    to: move.to,
+    promotion: move.promotion,
+  })
+  if (!result) {
+    return Number.NEGATIVE_INFINITY
+  }
+
+  if (candidate.isCheckmate()) {
+    return 100000
+  }
+
+  let score = evaluateMaterial(candidate)
+  score += centerBonus(result.to)
+  if (candidate.isCheck()) {
+    score += 35
+  }
+  if (result.captured) {
+    score += PIECE_VALUES[result.captured as PieceType] ?? 0
+  }
+  if (result.promotion) {
+    score += 80
+  }
+
+  // Lower levels make less consistent choices.
+  score += (Math.random() * 2 - 1) * level.randomNoise
+  return score
+}
+
+function chooseBotMove(chess: Chess, level: BotLevel) {
   const legalMoves = chess.moves({ verbose: true })
   if (legalMoves.length === 0) {
     return null
   }
 
-  const prioritizedCapture = legalMoves.find((move) => move.captured)
-  return prioritizedCapture ?? legalMoves[Math.floor(Math.random() * legalMoves.length)]
+  if (Math.random() < level.blunderChance) {
+    return legalMoves[Math.floor(Math.random() * legalMoves.length)]
+  }
+
+  let bestMove = legalMoves[0]
+  let bestScore = Number.NEGATIVE_INFINITY
+  for (const legalMove of legalMoves) {
+    const score = scoreMove(chess, legalMove, level)
+    if (score > bestScore) {
+      bestScore = score
+      bestMove = legalMove
+    }
+  }
+  return bestMove
 }
 
 function describeDraw(chess: Chess): string {
@@ -91,6 +224,7 @@ function formatSnapshot(chess: Chess, lastMove: RoomSnapshot['lastMove'], moves:
 
 export function OfflineChessRoom() {
   const botTimerRef = useRef<number | null>(null)
+  const [selectedBotLevelId, setSelectedBotLevelId] = useState(DEFAULT_BOT_LEVEL_ID)
   const [snapshot, setSnapshot] = useState<RoomSnapshot>(() => {
     const chess = new Chess()
     return formatSnapshot(chess, null, [])
@@ -102,6 +236,8 @@ export function OfflineChessRoom() {
   const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null)
 
   const chessState = useMemo(() => new Chess(snapshot.fen), [snapshot.fen])
+  const selectedBotLevel =
+    BOT_LEVELS.find((level) => level.id === selectedBotLevelId) ?? BOT_LEVELS.find((level) => level.id === DEFAULT_BOT_LEVEL_ID) ?? BOT_LEVELS[0]
   const isGameActive = snapshot.status === 'active'
   const isPlayerTurn = isGameActive && snapshot.turn === 'white'
 
@@ -124,8 +260,9 @@ export function OfflineChessRoom() {
     }
 
     setIsBotThinking(true)
+    const delayMs = selectedBotLevel.thinkTimeMs + Math.floor(Math.random() * selectedBotLevel.randomDelayMs)
     botTimerRef.current = window.setTimeout(() => {
-      const botMove = chooseBotMove(chessAfterPlayer)
+      const botMove = chooseBotMove(chessAfterPlayer, selectedBotLevel)
       if (!botMove) {
         setSnapshot(formatSnapshot(chessAfterPlayer, null, baseMoves))
         setIsBotThinking(false)
@@ -144,7 +281,7 @@ export function OfflineChessRoom() {
       )
       setIsBotThinking(false)
       botTimerRef.current = null
-    }, 450)
+    }, delayMs)
   }
 
   const handleSquareClick = (square: Square) => {
@@ -250,6 +387,21 @@ export function OfflineChessRoom() {
   }
 
   useEffect(() => {
+    const savedLevelId = localStorage.getItem(OFFLINE_BOT_LEVEL_STORAGE_KEY)?.trim() ?? ''
+    if (!savedLevelId) {
+      return
+    }
+    const exists = BOT_LEVELS.some((level) => level.id === savedLevelId)
+    if (exists) {
+      setSelectedBotLevelId(savedLevelId)
+    }
+  }, [])
+
+  useEffect(() => {
+    localStorage.setItem(OFFLINE_BOT_LEVEL_STORAGE_KEY, selectedBotLevelId)
+  }, [selectedBotLevelId])
+
+  useEffect(() => {
     return () => {
       if (botTimerRef.current) {
         window.clearTimeout(botTimerRef.current)
@@ -264,6 +416,9 @@ export function OfflineChessRoom() {
         <header className="flex flex-col gap-3 rounded-md border border-[#3a3734] bg-[#262421] p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1">
             <p className="text-xs uppercase tracking-[0.24em] text-[#9f9a93]">Offline vs Robot</p>
+            <p className="text-xs text-[#bfb9b1]" data-testid="offline-bot-rating-label">
+              سطح بات: {selectedBotLevel.label} • ریتینگ {selectedBotLevel.rating}
+            </p>
             <h2 className="text-xl font-black tracking-tight text-[#f3efe8] sm:text-2xl" data-testid="offline-status-label">
               {snapshot.status === 'active'
                 ? isBotThinking
@@ -276,14 +431,31 @@ export function OfflineChessRoom() {
                   : snapshot.drawReason ?? 'Draw'}
             </h2>
           </div>
-          <button
-            type="button"
-            onClick={resetGame}
-            data-testid="offline-reset-btn"
-            className="rounded-md border border-[#57524c] bg-[#34312e] px-3 py-2 text-xs font-semibold text-[#e6e2da] transition hover:bg-[#3f3b38]"
-          >
-            New game
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="inline-flex items-center gap-2 rounded-md border border-[#57524c] bg-[#34312e] px-2 py-1.5 text-xs text-[#d9d5cf]">
+              <span>سطح</span>
+              <select
+                value={selectedBotLevelId}
+                onChange={(event) => setSelectedBotLevelId(event.target.value)}
+                data-testid="offline-bot-level-select"
+                className="rounded border border-[#6e6862] bg-[#262421] px-2 py-1 text-xs text-[#f3efe8] outline-none"
+              >
+                {BOT_LEVELS.map((level) => (
+                  <option key={level.id} value={level.id}>
+                    {level.label} ({level.rating})
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              onClick={resetGame}
+              data-testid="offline-reset-btn"
+              className="rounded-md border border-[#57524c] bg-[#34312e] px-3 py-2 text-xs font-semibold text-[#e6e2da] transition hover:bg-[#3f3b38]"
+            >
+              New game
+            </button>
+          </div>
         </header>
 
         {error ? <p className="rounded-lg bg-red-500/15 px-4 py-3 text-sm text-red-200">{error}</p> : null}
@@ -341,7 +513,9 @@ export function OfflineChessRoom() {
             <section className="rounded-md border border-[#3a3734] bg-[#262421] p-4 text-sm text-[#cbc7c2]">
               <h3 className="mb-2 text-sm font-bold uppercase tracking-wide text-[#f3efe8]">Players</h3>
               <p>White: You</p>
-              <p>Black: Robot</p>
+              <p>
+                Black: Robot ({selectedBotLevel.label} • {selectedBotLevel.rating})
+              </p>
             </section>
           </aside>
         </section>
