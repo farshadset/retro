@@ -5,9 +5,22 @@ import { Chess, Square } from 'chess.js'
 import { ChessBoard } from './chess-board'
 import { MoveList } from './move-list'
 import { PlayerPanel } from './player-panel'
-import { createRoom, fetchRoom, joinRoom, makeMove, resign, roomEventsUrl, sendChatMessage } from '@/lib/chess/client'
+import { createRoom, fetchRoom, getOrCreateClientId, joinRoom, makeMove, resign, roomEventsUrl, sendChatMessage } from '@/lib/chess/client'
 import { ChatMessage, PlayerColor, RoomSession, RoomSnapshot, RoomStatus } from '@/lib/chess/types'
 import { PROFILE_USERNAME_STORAGE_KEY } from '@/lib/profile/constants'
+
+function resolveSessionColor(nextSnapshot: RoomSnapshot, nextSession: RoomSession): RoomSession {
+  const isWhitePlayer = nextSnapshot.players.white?.id === nextSession.playerId
+  const isBlackPlayer = nextSnapshot.players.black?.id === nextSession.playerId
+  const expectedColor: PlayerColor | null = isWhitePlayer ? 'white' : isBlackPlayer ? 'black' : null
+  if (expectedColor === nextSession.color) {
+    return nextSession
+  }
+  return {
+    ...nextSession,
+    color: expectedColor,
+  }
+}
 
 type PromotionPiece = 'q' | 'r' | 'b' | 'n'
 type ChatComposerTab = 'text' | 'sticker'
@@ -41,6 +54,7 @@ const PROMOTION_PIECE_IMAGE: Record<PlayerColor, Record<PromotionPiece, string>>
 
 const SESSION_STORAGE_KEY = 'realtime-chess-session'
 const WAITING_ACTIONS_DELAY_MS = 15_000
+const PRESENCE_PING_INTERVAL_MS = 15_000
 const WAITING_ACTIONS_DELAY_STORAGE_KEY = 'realtime-chess-waiting-actions-delay-ms'
 const CHAT_QUICK_MESSAGES = ['ایول', 'عجب حرکتی بود', 'دمت گرم', 'نوبت تو', 'آفرین', 'حرکت خوبی بود', 'خوبه!']
 const CHAT_STICKER_CATEGORIES: Array<{ id: ChatStickerCategoryId; label: string; stickers: string[] }> = [
@@ -141,6 +155,42 @@ export function ChessRoom() {
   const autoBootstrappingRef = useRef(false)
   const autoPlayerNameRef = useRef<string>('')
 
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+    const username = localStorage.getItem(PROFILE_USERNAME_STORAGE_KEY)?.trim() ?? ''
+    if (!username) {
+      return
+    }
+    let cancelled = false
+
+    const pingPresence = async () => {
+      try {
+        const response = await fetch('/api/profile?action=touch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username }),
+        })
+        if (!response.ok && !cancelled) {
+          // Best-effort heartbeat; ignore transient failures.
+        }
+      } catch {
+        // Best-effort heartbeat; ignore transient failures.
+      }
+    }
+
+    void pingPresence()
+    const interval = window.setInterval(() => {
+      void pingPresence()
+    }, PRESENCE_PING_INTERVAL_MS)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
+  }, [])
+
   const playerColor = session?.color ?? 'white'
   const isPlayerTurn = Boolean(snapshot && session?.color && snapshot.turn === session.color && snapshot.status === 'active')
 
@@ -224,13 +274,19 @@ export function ChessRoom() {
     }
   }, [])
 
-  const connectEvents = useCallback((roomId: string) => {
+  const connectEvents = useCallback((roomId: string, token: string | null = null) => {
     disconnectEvents()
     const source = new EventSource(roomEventsUrl(roomId))
     const applySnapshot = (rawPayload: string) => {
       try {
         const nextSnapshot = JSON.parse(rawPayload) as RoomSnapshot
         setSnapshot(nextSnapshot)
+        setSession((previousSession) => {
+          if (!previousSession) {
+            return previousSession
+          }
+          return resolveSessionColor(nextSnapshot, previousSession)
+        })
       } catch {
         setError('Failed to parse live game event.')
       }
@@ -256,7 +312,7 @@ export function ChessRoom() {
     source.onerror = () => {
       source.close()
       setTimeout(() => {
-        connectEvents(roomId)
+        connectEvents(roomId, token)
       }, 1200)
     }
     eventSourceRef.current = source
@@ -264,8 +320,24 @@ export function ChessRoom() {
     clockIntervalRef.current = window.setInterval(async () => {
       setNowTick(Date.now())
       try {
-        const fresh = await fetchRoom(roomId)
+        const fresh = await fetchRoom(roomId, token)
         setSnapshot(fresh.snapshot)
+        if (fresh.session) {
+          setSession((previousSession) => {
+            const baseSession = fresh.session ?? previousSession
+            if (!baseSession) {
+              return previousSession
+            }
+            return resolveSessionColor(fresh.snapshot, baseSession)
+          })
+        } else {
+          setSession((previousSession) => {
+            if (!previousSession) {
+              return previousSession
+            }
+            return resolveSessionColor(fresh.snapshot, previousSession)
+          })
+        }
       } catch {
         // Ignore periodic errors; SSE will continue retrying.
       }
@@ -274,13 +346,14 @@ export function ChessRoom() {
 
   const enterGame = useCallback(
     (nextSnapshot: RoomSnapshot, nextSession: RoomSession) => {
+      const resolvedSession = resolveSessionColor(nextSnapshot, nextSession)
       setSnapshot(nextSnapshot)
-      setSession(nextSession)
+      setSession(resolvedSession)
       setError(null)
       setNowTick(Date.now())
       clearSelection()
-      persistSession(nextSnapshot.roomId, nextSession)
-      connectEvents(nextSnapshot.roomId)
+      persistSession(nextSnapshot.roomId, resolvedSession)
+      connectEvents(nextSnapshot.roomId, resolvedSession.token)
     },
     [clearSelection, connectEvents, persistSession]
   )
@@ -304,9 +377,9 @@ export function ChessRoom() {
         try {
           const parsed = JSON.parse(raw) as StoredSession
           if (parsed?.roomId && parsed?.session?.token) {
-            const response = await fetchRoom(parsed.roomId)
+            const response = await fetchRoom(parsed.roomId, parsed.session.token)
             if (cancelled) return
-            enterGame(response.snapshot, parsed.session)
+            enterGame(response.snapshot, response.session ?? parsed.session)
             return
           }
         } catch {
@@ -324,12 +397,13 @@ export function ChessRoom() {
       try {
         const autoName = resolveAutoPlayerName()
         const response = roomIdFromQuery
-          ? await joinRoom({ roomId: roomIdFromQuery, name: autoName })
+          ? await joinRoom({ roomId: roomIdFromQuery, name: autoName, clientId: getOrCreateClientId() })
           : await createRoom({
               name: autoName,
               timeControlMinutes: 10,
               incrementSeconds: 2,
               quickMatch: true,
+              clientId: getOrCreateClientId(),
             })
         if (cancelled) return
         window.history.replaceState({}, '', `/online?room=${response.snapshot.roomId}`)
@@ -489,6 +563,7 @@ export function ChessRoom() {
         incrementSeconds: Math.max(0, Math.round(snapshot.incrementMs / 1_000)),
         quickMatch: true,
         excludeRoomId: snapshot.roomId,
+        clientId: getOrCreateClientId(),
       })
       window.history.replaceState({}, '', `/online?room=${response.snapshot.roomId}`)
       enterGame(response.snapshot, response.session)

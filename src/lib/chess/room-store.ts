@@ -129,6 +129,10 @@ function clampMs(ms: number): number {
   return Math.max(0, Math.floor(ms))
 }
 
+function normalizePlayerIdentity(name: string): string {
+  return name.trim().toLowerCase()
+}
+
 export class RoomStore {
   private rooms = new Map<string, RoomState>()
 
@@ -141,12 +145,16 @@ export class RoomStore {
     excludeRoomId?: string
   }): RoomState | null {
     const excludedRoomId = input.excludeRoomId?.trim().toUpperCase()
+    const requesterIdentity = normalizePlayerIdentity(input.name)
     const waitingRooms = Array.from(this.rooms.values())
       .filter((room) => {
         if (room.status !== 'waiting' || room.players.black) {
           return false
         }
         if (!room.players.white) {
+          return false
+        }
+        if (requesterIdentity && normalizePlayerIdentity(room.players.white.name) === requesterIdentity) {
           return false
         }
         if (input.clientId) {
@@ -459,10 +467,14 @@ export class RoomStore {
     const token = randomUUID()
     const playerId = randomUUID()
     let color: PlayerColor | null = null
+    const joiningIdentity = normalizePlayerIdentity(name)
 
     const joiningClientId = input.clientId?.trim() || ''
 
     if (!room.players.black) {
+      if (joiningIdentity && room.players.white && normalizePlayerIdentity(room.players.white.name) === joiningIdentity) {
+        throw new ChessApiError(409, 'SELF_MATCH_FORBIDDEN', 'Cannot join your own waiting room.')
+      }
       if (joiningClientId) {
         const isSameClient = Array.from(room.sessionsByToken.values()).some(
           (existingSession) => existingSession.clientId === joiningClientId

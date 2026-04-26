@@ -14,6 +14,7 @@ interface SessionResponse {
 
 interface SnapshotResponse {
   snapshot: RoomSnapshot
+  session?: RoomSession | null
 }
 
 const API_BASE_URL = (process.env.NEXT_PUBLIC_CHESS_API_BASE_URL ?? '').trim().replace(/\/$/, '')
@@ -45,6 +46,10 @@ function getClientId(): string {
   const generated = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
   window.localStorage.setItem(CLIENT_ID_STORAGE_KEY, generated)
   return generated
+}
+
+export function getOrCreateClientId(): string {
+  return getClientId()
 }
 
 export async function createRoom(input: {
@@ -80,8 +85,9 @@ export async function joinRoom(input: { roomId: string; name: string; clientId?:
   return parseApiResponse<SessionResponse>(response)
 }
 
-export async function fetchRoom(roomId: string): Promise<SnapshotResponse> {
-  const response = await fetch(apiUrl(`/api/chess/rooms/${roomId}`), {
+export async function fetchRoom(roomId: string, token?: string | null): Promise<SnapshotResponse> {
+  const query = token?.trim() ? `?token=${encodeURIComponent(token.trim())}` : ''
+  const response = await fetch(apiUrl(`/api/chess/rooms/${roomId}${query}`), {
     method: 'GET',
     cache: 'no-store',
   })

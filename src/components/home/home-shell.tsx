@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createRoom, joinRoom } from '@/lib/chess/client'
+import { createRoom, getOrCreateClientId, joinRoom } from '@/lib/chess/client'
 import { PROFILE_USERNAME_STORAGE_KEY } from '@/lib/profile/constants'
 
 type FooterTab = 'home' | 'profile' | 'puzzle' | 'news'
@@ -74,17 +74,6 @@ interface ApiResponse {
   error?: { code?: string; message?: string }
 }
 
-function getOrCreateChessClientId(): string {
-  const storageKey = 'realtime-chess-client-id'
-  const existing = localStorage.getItem(storageKey)?.trim() ?? ''
-  if (existing) {
-    return existing
-  }
-  const generated = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
-  localStorage.setItem(storageKey, generated)
-  return generated
-}
-
 interface GameInviteApiResponse {
   invite?: { toUsername: string; inviteId: string }
   response?: { inviteId: string; action: 'accept' | 'reject' }
@@ -100,6 +89,7 @@ const FOOTER_ITEMS: FooterItem[] = [
 
 const ONLINE_TIME_CONTROL_STORAGE_KEY = 'realtime-chess-online-time-control'
 const ONLINE_TIME_CONTROL_DEFAULT_ID = '10-2'
+const PRESENCE_PING_INTERVAL_MS = 15_000
 const ONLINE_TIME_CONTROL_OPTIONS: OnlineTimeControlOption[] = [
   { id: '1-0', label: 'Bullet • 1+0', timeControlMinutes: 1, incrementSeconds: 0 },
   { id: '3-0', label: 'Blitz • 3+0', timeControlMinutes: 3, incrementSeconds: 0 },
@@ -1162,6 +1152,36 @@ export function HomeShell() {
 
   useEffect(() => {
     if (!isAuthenticated || !profileName.trim()) {
+      return
+    }
+    let cancelled = false
+    const username = profileName.trim()
+    const pingPresence = async () => {
+      try {
+        const response = await fetch('/api/profile?action=touch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username }),
+        })
+        if (!response.ok && !cancelled) {
+          // Best-effort heartbeat.
+        }
+      } catch {
+        // Best-effort heartbeat.
+      }
+    }
+    void pingPresence()
+    const interval = setInterval(() => {
+      void pingPresence()
+    }, PRESENCE_PING_INTERVAL_MS)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [isAuthenticated, profileName])
+
+  useEffect(() => {
+    if (!isAuthenticated || !profileName.trim()) {
       setFriends([])
       setFriendPresence([])
       setIncomingRequests([])
@@ -1242,7 +1262,7 @@ export function HomeShell() {
         timeControlMinutes: selectedTimeControl.timeControlMinutes,
         incrementSeconds: selectedTimeControl.incrementSeconds,
         quickMatch: true,
-        clientId: profileName.trim() || null,
+        clientId: getOrCreateClientId(),
       })
       localStorage.setItem(
         'realtime-chess-session',
@@ -1318,7 +1338,7 @@ export function HomeShell() {
         name: fromUsername,
         timeControlMinutes: selectedTimeControl.timeControlMinutes,
         incrementSeconds: selectedTimeControl.incrementSeconds,
-        clientId: fromUsername,
+        clientId: getOrCreateClientId(),
       })
       const roomId = createResponse.snapshot.roomId
 
@@ -1381,7 +1401,7 @@ export function HomeShell() {
       await loadNotifications(username, true)
 
       if (action === 'accept') {
-        const joinResponse = await joinRoom({ roomId: invite.roomId, name: username, clientId: username })
+        const joinResponse = await joinRoom({ roomId: invite.roomId, name: username, clientId: getOrCreateClientId() })
         localStorage.setItem(
           'realtime-chess-session',
           JSON.stringify({ roomId: invite.roomId, session: joinResponse.session })

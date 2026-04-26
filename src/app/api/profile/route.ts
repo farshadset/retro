@@ -14,6 +14,7 @@ function persistenceError(code: string, message: string): Response {
 
 type ProfileAction =
   | 'health'
+  | 'touch'
   | 'register'
   | 'login'
   | 'friends'
@@ -36,6 +37,7 @@ function normalizeAction(action: string): ProfileAction | null {
   }
 
   if (normalized === 'health') return 'health'
+  if (normalized === 'touch' || normalized === 'touch-presence' || normalized === 'touchPresence') return 'touch'
   if (normalized === 'register') return 'register'
   if (normalized === 'login') return 'login'
   if (normalized === 'friends' || normalized === 'friendsOverview') return 'friends'
@@ -219,6 +221,17 @@ export async function POST(request: Request): Promise<Response> {
       return badRequest('پارامتر action الزامی است.')
     }
 
+    if (action === 'touch') {
+      const result = getUserStore().touch({
+        username: (body.username as string | undefined) ?? '',
+      })
+      const persistenceWriteError = await saveStoreToPersistence()
+      if (persistenceWriteError) {
+        return persistenceWriteError
+      }
+      return Response.json({ user: result }, { status: 200 })
+    }
+
     if (action === 'register') {
       const result = getUserStore().register({
         username: (body.username as string | undefined) ?? '',
@@ -237,6 +250,10 @@ export async function POST(request: Request): Promise<Response> {
         username: (body.username as string | undefined) ?? '',
         password: (body.password as string | undefined) ?? '',
       })
+      const persistenceWriteError = await saveStoreToPersistence()
+      if (persistenceWriteError) {
+        return persistenceWriteError
+      }
       return Response.json({ user: result }, { status: 200 })
     }
 

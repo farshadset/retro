@@ -85,6 +85,114 @@ test.describe('Home actions and profile registration', () => {
     await secondContext.close()
   })
 
+  test('online quick match does not pair same client with itself', async ({ page, context }) => {
+    await page.goto('/')
+    await page.evaluate(() => localStorage.clear())
+    await page.reload()
+
+    await page.getByTestId('online-play-btn').click()
+    await expect(page).toHaveURL(/\/online\?room=/)
+    const firstRoomId = new URL(page.url()).searchParams.get('room')
+    expect(firstRoomId).toBeTruthy()
+
+    // Same browser context shares localStorage client id.
+    const sameClientPage = await context.newPage()
+    await sameClientPage.goto('/')
+    await sameClientPage.getByTestId('online-play-btn').click()
+    await expect(sameClientPage).toHaveURL(/\/online\?room=/)
+    const secondRoomId = new URL(sameClientPage.url()).searchParams.get('room')
+    expect(secondRoomId).toBeTruthy()
+    expect(secondRoomId).not.toBe(firstRoomId)
+
+    await sameClientPage.close()
+  })
+
+  test('online game assigns opposite colors and alternates turns', async ({ page, context }) => {
+    const seed = Date.now()
+    const firstUser = `colors-a-${seed}`
+    const secondUser = `colors-b-${seed}`
+    const password = 'secret123'
+
+    const registerUser = async (targetPage: import('@playwright/test').Page, username: string) => {
+      await targetPage.goto('/')
+      await targetPage.evaluate(() => localStorage.clear())
+      await targetPage.reload()
+      await targetPage.getByTestId('footer-tab-profile').click()
+      await targetPage.getByTestId('profile-mode-register').click()
+      await targetPage.getByTestId('profile-name-input').fill(username)
+      await targetPage.getByTestId('profile-password-input').fill(password)
+      await targetPage.getByTestId('profile-confirm-password-input').fill(password)
+      await targetPage.getByTestId('profile-register-btn').click()
+      await expect(targetPage.getByTestId('profile-username-value')).toContainText(username)
+      await targetPage.getByTestId('footer-tab-home').click()
+    }
+
+    await registerUser(page, firstUser)
+    await page.getByTestId('online-time-selector-btn').click()
+    await page.getByTestId('online-time-option-3-2').click()
+    await page.getByTestId('online-play-btn').click()
+    await expect(page).toHaveURL(/\/online\?room=/)
+    const roomId = new URL(page.url()).searchParams.get('room')
+    expect(roomId).toBeTruthy()
+
+    const secondContext = await context.browser()?.newContext()
+    if (!secondContext) {
+      throw new Error('Could not create second browser context')
+    }
+    const secondPage = await secondContext.newPage()
+    await registerUser(secondPage, secondUser)
+    await secondPage.getByTestId('online-time-selector-btn').click()
+    await secondPage.getByTestId('online-time-option-3-2').click()
+    await secondPage.getByTestId('online-play-btn').click()
+    await expect(secondPage).toHaveURL(/\/online\?room=/)
+    expect(new URL(secondPage.url()).searchParams.get('room')).toBe(roomId)
+
+    const fetchState = async (targetPage: import('@playwright/test').Page) => {
+      return await targetPage.evaluate(async (id) => {
+        const sessionRaw = localStorage.getItem('realtime-chess-session')
+        const token = sessionRaw ? JSON.parse(sessionRaw)?.session?.token ?? null : null
+        const response = await fetch(`/api/chess/rooms/${id}${token ? `?token=${encodeURIComponent(token)}` : ''}`)
+        const payload = await response.json()
+        return {
+          color: payload.session?.color ?? null,
+          turn: payload.snapshot?.turn ?? null,
+        }
+      }, roomId ?? '')
+    }
+
+    await expect.poll(async () => await fetchState(page)).toMatchObject({ turn: 'white' })
+    await expect.poll(async () => await fetchState(secondPage)).toMatchObject({ turn: 'white' })
+
+    const state = await fetchState(page)
+    const secondState = await fetchState(secondPage)
+
+    const colorA = state.color
+    const colorB = secondState.color
+    expect(colorA === 'white' || colorA === 'black').toBeTruthy()
+    expect(colorB === 'white' || colorB === 'black').toBeTruthy()
+    expect(colorA).not.toBe(colorB)
+
+    const whitePage = colorA === 'white' ? page : secondPage
+    const blackPage = colorA === 'white' ? secondPage : page
+
+    await whitePage.getByTestId('chess-square-e2').click()
+    await whitePage.getByTestId('chess-square-e4').click()
+
+    await expect
+      .poll(async () => {
+        return await page.evaluate(async (id) => {
+          const response = await fetch(`/api/chess/rooms/${id}`)
+          const payload = await response.json()
+          return payload.snapshot?.turn ?? null
+        }, roomId ?? '')
+      })
+      .toBe('black')
+    await expect(blackPage.getByText('Your turn')).toBeVisible({ timeout: 10000 })
+    await expect(whitePage.getByText("Opponent's turn")).toBeVisible({ timeout: 10000 })
+
+    await secondContext.close()
+  })
+
   test('waiting actions panel appears and retry/share options are shown', async ({ page }) => {
     await page.goto('/online')
 
@@ -141,6 +249,64 @@ test.describe('Home actions and profile registration', () => {
     await registerUser(secondPage, secondUser)
     await secondPage.getByTestId('online-play-btn').click()
     await expect(secondPage).toHaveURL(/(\/online\?room=|\?room=)/)
+    const secondRoomId = new URL(secondPage.url()).searchParams.get('room')
+    expect(secondRoomId).toBeTruthy()
+    expect(secondRoomId).toBe(firstRoomId)
+
+    await expect
+      .poll(async () => {
+        return page.evaluate(async (roomId) => {
+          const rawSession = localStorage.getItem('realtime-chess-session')
+          if (!rawSession) {
+            return null
+          }
+          const parsed = JSON.parse(rawSession) as { session?: { token?: string } }
+          const token = parsed.session?.token ?? ''
+          const response = await fetch(`/api/chess/rooms/${roomId}?token=${encodeURIComponent(token)}`)
+          const payload = await response.json()
+          return payload.session?.color ?? null
+        }, firstRoomId ?? '')
+      })
+      .toBeTruthy()
+
+    await expect
+      .poll(async () => {
+        return secondPage.evaluate(async (roomId) => {
+          const rawSession = localStorage.getItem('realtime-chess-session')
+          if (!rawSession) {
+            return null
+          }
+          const parsed = JSON.parse(rawSession) as { session?: { token?: string } }
+          const token = parsed.session?.token ?? ''
+          const response = await fetch(`/api/chess/rooms/${roomId}?token=${encodeURIComponent(token)}`)
+          const payload = await response.json()
+          return payload.session?.color ?? null
+        }, firstRoomId ?? '')
+      })
+      .toBeTruthy()
+
+    const colors = await page.evaluate(
+      async ({ roomId }) => {
+        const firstRawSession = localStorage.getItem('realtime-chess-session')
+        const firstToken = firstRawSession ? (JSON.parse(firstRawSession) as { session?: { token?: string } }).session?.token ?? '' : ''
+        const firstResponse = await fetch(`/api/chess/rooms/${roomId}?token=${encodeURIComponent(firstToken)}`)
+        const firstPayload = await firstResponse.json()
+        return {
+          firstColor: firstPayload.session?.color ?? null,
+        }
+      },
+      { roomId: firstRoomId ?? '' }
+    )
+    const secondColor = await secondPage.evaluate(async (roomId) => {
+      const secondRawSession = localStorage.getItem('realtime-chess-session')
+      const secondToken = secondRawSession ? (JSON.parse(secondRawSession) as { session?: { token?: string } }).session?.token ?? '' : ''
+      const secondResponse = await fetch(`/api/chess/rooms/${roomId}?token=${encodeURIComponent(secondToken)}`)
+      const secondPayload = await secondResponse.json()
+      return secondPayload.session?.color ?? null
+    }, firstRoomId ?? '')
+    expect(colors.firstColor).toBeTruthy()
+    expect(secondColor).toBeTruthy()
+    expect(colors.firstColor).not.toBe(secondColor)
 
     await page.getByTestId('chat-toggle-btn').click()
     await secondPage.getByTestId('chat-toggle-btn').click()

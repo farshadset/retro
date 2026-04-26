@@ -398,6 +398,19 @@ class UserStore {
     return { username: user.username }
   }
 
+  touch(input: { username: string }): { username: string; lastActiveAt: number } {
+    const normalized = this.normalizeUsername(input.username)
+    if (!normalized) {
+      throw new ProfileApiError(400, 'INVALID_USERNAME', 'نام کاربری الزامی است.')
+    }
+    const user = this.getUserByNormalizedUsername(normalized)
+    this.markUserActive(user)
+    return {
+      username: user.username,
+      lastActiveAt: user.lastActiveAt ?? Date.now(),
+    }
+  }
+
   updateUsername(input: { currentUsername: string; newUsername: string }): { username: string } {
     const currentUsername = input.currentUsername.trim()
     const newUsername = input.newUsername.trim()
