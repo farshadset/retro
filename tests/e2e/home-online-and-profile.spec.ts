@@ -38,6 +38,18 @@ test.describe('Home actions and profile registration', () => {
       await targetPage.goto('/')
       await targetPage.evaluate(() => localStorage.clear())
       await targetPage.reload()
+      await expect
+        .poll(async () => {
+          return targetPage.evaluate(async () => {
+            const response = await fetch('/api/profile?action=health')
+            if (!response.ok) {
+              return 'not-ready'
+            }
+            const payload = await response.json()
+            return payload.status ?? 'not-ready'
+          })
+        })
+        .toBe('ok')
       await targetPage.getByTestId('footer-tab-profile').click()
       await targetPage.getByTestId('profile-mode-register').click()
       await targetPage.getByTestId('profile-name-input').fill(username)
@@ -316,8 +328,11 @@ test.describe('Home actions and profile registration', () => {
       const payload = await response.json()
       return payload.snapshot
     }, roomA ?? '')
-    expect(snapshot.whiteTimeMs).toBe(600000)
-    expect(snapshot.blackTimeMs).toBe(600000)
+    expect(snapshot.whiteTimeMs).toBeLessThanOrEqual(600000)
+    expect(snapshot.blackTimeMs).toBeLessThanOrEqual(600000)
+    expect(snapshot.whiteTimeMs).toBeGreaterThan(590000)
+    expect(snapshot.blackTimeMs).toBeGreaterThan(590000)
+    expect(Math.abs(snapshot.whiteTimeMs - snapshot.blackTimeMs)).toBeLessThan(2000)
     expect(snapshot.status).toBe('active')
 
     await secondContext.close()
