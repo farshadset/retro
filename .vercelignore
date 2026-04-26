@@ -1,0 +1,12 @@
+node_modules
+.git
+.next
+docker-dist
+docker-dist.tar.gz
+test-results
+playwright-report
+deployment/parspack
+docker
+go-server
+chess-api
+*.log

@@ -1,0 +1,43 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+    container_name: retrochess-web
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: ${PORT:-3000}
+      NEXT_PUBLIC_CHESS_API_BASE_URL: ${NEXT_PUBLIC_CHESS_API_BASE_URL:-}
+    expose:
+      - "3000"
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    container_name: retrochess-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      GO_CHESS_PORT: ${GO_CHESS_PORT:-4000}
+      CHESS_STORE_MODE: ${CHESS_STORE_MODE:-memory}
+      CHESS_ROOM_STORE_MAX_ROOMS: ${CHESS_ROOM_STORE_MAX_ROOMS:-500}
+      CHESS_ROOM_STORE_TTL_MS: ${CHESS_ROOM_STORE_TTL_MS:-21600000}
+    expose:
+      - "4000"
+
+  gateway:
+    build:
+      context: .
+      dockerfile: docker/gateway.Dockerfile
+    container_name: retrochess-gateway
+    restart: unless-stopped
+    depends_on:
+      - web
+      - api
+    ports:
+      - "80:80"

@@ -6,12 +6,20 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "go:build": "cd go-server && go build -o ../chess-api .",
+    "go:run": "cd go-server && go run .",
+    "start:pm2": "pm2 start ecosystem.config.cjs --env production",
+    "restart:pm2": "pm2 reload realtime-chess-web realtime-chess-api --update-env",
+    "stop:pm2": "pm2 delete realtime-chess-web realtime-chess-api"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
     "@mui/material": "^7.3.2",
+    "chess.js": "^1.4.0",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.0.0",
     "lucide-react": "^0.294.0",
@@ -21,12 +29,14 @@
     "tailwind-merge": "^2.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@types/node": "^20.8.0",
     "@types/react": "^18.3.24",
     "@types/react-dom": "^18.2.0",
     "autoprefixer": "^10.4.16",
     "eslint": "^8.51.0",
     "eslint-config-next": "14.0.0",
+    "pm2": "^6.0.13",
     "postcss": "^8.4.31",
     "tailwindcss": "^3.3.5",
     "typescript": "^5.2.2"
