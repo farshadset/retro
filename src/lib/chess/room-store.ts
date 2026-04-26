@@ -18,6 +18,7 @@ interface SessionRecord {
   playerId: string
   color: PlayerColor | null
   name: string
+  clientId: string | null
 }
 
 interface RoomState {
@@ -35,6 +36,7 @@ interface RoomState {
   chatMessages: ChatMessage[]
   winner: PlayerColor | null
   drawReason: string | null
+  matchAnyTimeControl: boolean
   timeControlMs: number
   incrementMs: number
   whiteTimeMs: number
@@ -48,6 +50,8 @@ const ROOM_ID_LENGTH = 6
 const runtimeConfig = getChessRuntimeConfig()
 const MAX_ROOMS = runtimeConfig.roomStoreMaxRooms
 const ROOM_TTL_MS = runtimeConfig.roomStoreTtlMs
+const MATCH_ANY_FALLBACK_TIME_CONTROL_MS = 24 * 60 * 60_000
+const MATCH_ANY_FALLBACK_INCREMENT_MS = 0
 const ALLOWED_CHAT_TEXTS = new Set([
   'ایول',
   'عجب حرکتی بود',
@@ -129,6 +133,8 @@ export class RoomStore {
   private rooms = new Map<string, RoomState>()
 
   private findWaitingRoom(input: {
+    name: string
+    clientId?: string
     timeControlMs: number
     incrementMs: number
     matchAnyTimeControl: boolean
@@ -140,10 +146,21 @@ export class RoomStore {
         if (room.status !== 'waiting' || room.players.black) {
           return false
         }
+        if (!room.players.white) {
+          return false
+        }
+        if (input.clientId) {
+          const isSameClient = Array.from(room.sessionsByToken.values()).some(
+            (session) => session.clientId === input.clientId
+          )
+          if (isSameClient) {
+            return false
+          }
+        }
         if (excludedRoomId && room.id === excludedRoomId) {
           return false
         }
-        if (input.matchAnyTimeControl) {
+        if (input.matchAnyTimeControl || room.matchAnyTimeControl) {
           return true
         }
         return room.timeControlMs === input.timeControlMs && room.incrementMs === input.incrementMs
@@ -263,7 +280,13 @@ export class RoomStore {
     return session
   }
 
-  createRoom(input: { name: string; timeControlMs: number; incrementMs: number }): {
+  createRoom(input: {
+    name: string
+    timeControlMs: number
+    incrementMs: number
+    matchAnyTimeControl?: boolean
+    clientId?: string
+  }): {
     snapshot: RoomSnapshot
     session: SessionRecord
   } {
@@ -299,6 +322,7 @@ export class RoomStore {
             playerId,
             color: 'white',
             name,
+            clientId: input.clientId?.trim() || null,
           },
         ],
       ]),
@@ -308,6 +332,7 @@ export class RoomStore {
       chatMessages: [],
       winner: null,
       drawReason: null,
+      matchAnyTimeControl: Boolean(input.matchAnyTimeControl),
       timeControlMs: input.timeControlMs,
       incrementMs: input.incrementMs,
       whiteTimeMs: input.timeControlMs,
@@ -329,6 +354,7 @@ export class RoomStore {
     incrementMs: number
     matchAnyTimeControl: boolean
     excludeRoomId?: string
+    clientId?: string
   }): {
     snapshot: RoomSnapshot
     session: SessionRecord
@@ -341,6 +367,8 @@ export class RoomStore {
 
     this.cleanupExpiredRooms()
     const waitingRoom = this.findWaitingRoom({
+      name,
+      clientId: input.clientId,
       timeControlMs: input.timeControlMs,
       incrementMs: input.incrementMs,
       matchAnyTimeControl: input.matchAnyTimeControl,
@@ -350,8 +378,10 @@ export class RoomStore {
     if (!waitingRoom) {
       const created = this.createRoom({
         name,
-        timeControlMs: input.timeControlMs,
-        incrementMs: input.incrementMs,
+        timeControlMs: input.matchAnyTimeControl ? MATCH_ANY_FALLBACK_TIME_CONTROL_MS : input.timeControlMs,
+        incrementMs: input.matchAnyTimeControl ? MATCH_ANY_FALLBACK_INCREMENT_MS : input.incrementMs,
+        matchAnyTimeControl: input.matchAnyTimeControl,
+        clientId: input.clientId,
       })
       return {
         ...created,
@@ -362,9 +392,40 @@ export class RoomStore {
     const now = Date.now()
     const token = randomUUID()
     const playerId = randomUUID()
-    const color: PlayerColor = 'black'
-    waitingRoom.players.black = { id: playerId, name, color }
+    const waitingPlayer = waitingRoom.players.white
+    if (!waitingPlayer) {
+      throw new ChessApiError(409, 'ROOM_NOT_AVAILABLE', 'Room is not available for quick match.')
+    }
+    const waitingSession = Array.from(waitingRoom.sessionsByToken.values()).find(
+      (sessionItem) => sessionItem.playerId === waitingPlayer.id
+    )
+    if (!waitingSession) {
+      throw new ChessApiError(409, 'ROOM_NOT_AVAILABLE', 'Room player session is not available.')
+    }
+
+    if (waitingRoom.matchAnyTimeControl && input.matchAnyTimeControl) {
+      waitingRoom.timeControlMs = MATCH_ANY_FALLBACK_TIME_CONTROL_MS
+      waitingRoom.incrementMs = MATCH_ANY_FALLBACK_INCREMENT_MS
+    } else if (waitingRoom.matchAnyTimeControl && !input.matchAnyTimeControl) {
+      waitingRoom.timeControlMs = input.timeControlMs
+      waitingRoom.incrementMs = input.incrementMs
+    }
+
+    const newPlayerIsWhite = Math.random() < 0.5
+    const color: PlayerColor = newPlayerIsWhite ? 'white' : 'black'
+    if (newPlayerIsWhite) {
+      waitingRoom.players.white = { id: playerId, name, color: 'white' }
+      waitingRoom.players.black = { ...waitingPlayer, color: 'black' }
+      waitingSession.color = 'black'
+    } else {
+      waitingRoom.players.white = { ...waitingPlayer, color: 'white' }
+      waitingRoom.players.black = { id: playerId, name, color: 'black' }
+      waitingSession.color = 'white'
+    }
     waitingRoom.status = 'active'
+    waitingRoom.matchAnyTimeControl = false
+    waitingRoom.whiteTimeMs = waitingRoom.timeControlMs
+    waitingRoom.blackTimeMs = waitingRoom.timeControlMs
     waitingRoom.activeSince = now
 
     const session: SessionRecord = {
@@ -372,6 +433,7 @@ export class RoomStore {
       playerId,
       color,
       name,
+      clientId: input.clientId?.trim() || null,
     }
     waitingRoom.sessionsByToken.set(token, session)
     waitingRoom.updatedAt = now
@@ -384,7 +446,7 @@ export class RoomStore {
     }
   }
 
-  joinRoom(input: { roomId: string; name: string }): {
+  joinRoom(input: { roomId: string; name: string; clientId?: string }): {
     snapshot: RoomSnapshot
     session: SessionRecord
   } {
@@ -398,7 +460,17 @@ export class RoomStore {
     const playerId = randomUUID()
     let color: PlayerColor | null = null
 
+    const joiningClientId = input.clientId?.trim() || null
+
     if (!room.players.black) {
+      if (joiningClientId) {
+        const isSameClient = Array.from(room.sessionsByToken.values()).some(
+          (existingSession) => existingSession.clientId === joiningClientId
+        )
+        if (isSameClient) {
+          throw new ChessApiError(409, 'SELF_MATCH_FORBIDDEN', 'Cannot join your own waiting room.')
+        }
+      }
       color = 'black'
       room.players.black = { id: playerId, name, color }
       if (room.status === 'waiting') {
@@ -412,6 +484,7 @@ export class RoomStore {
       playerId,
       color,
       name,
+      clientId: joiningClientId,
     }
     room.sessionsByToken.set(token, session)
     room.updatedAt = now

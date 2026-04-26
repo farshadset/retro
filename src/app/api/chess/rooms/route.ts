@@ -8,6 +8,7 @@ interface CreateRoomBody {
   quickMatch?: boolean
   matchAnyTimeControl?: boolean
   excludeRoomId?: string
+  clientId?: string
 }
 
 export async function POST(request: Request): Promise<Response> {
@@ -18,10 +19,11 @@ export async function POST(request: Request): Promise<Response> {
     const quickMatch = Boolean(body.quickMatch)
     const matchAnyTimeControl = Boolean(body.matchAnyTimeControl)
     const excludeRoomId = (body.excludeRoomId ?? '').trim()
+    const clientId = (body.clientId ?? '').trim()
 
-    if (!Number.isFinite(minutes) || minutes < 1 || minutes > 60) {
+    if (!Number.isFinite(minutes) || minutes < 1 || minutes > 1440) {
       return jsonResponse(
-        { error: { code: 'INVALID_TIME_CONTROL', message: 'timeControlMinutes must be between 1 and 60.' } },
+        { error: { code: 'INVALID_TIME_CONTROL', message: 'timeControlMinutes must be between 1 and 1440.' } },
         400
       )
     }
@@ -36,6 +38,7 @@ export async function POST(request: Request): Promise<Response> {
     const result = quickMatch
       ? store.quickMatch({
           name: body.name ?? '',
+          clientId: clientId || undefined,
           timeControlMs: Math.floor(minutes * 60_000),
           incrementMs: Math.floor(incrementSeconds * 1_000),
           matchAnyTimeControl,
@@ -43,6 +46,7 @@ export async function POST(request: Request): Promise<Response> {
         })
       : store.createRoom({
           name: body.name ?? '',
+          clientId: clientId || undefined,
           timeControlMs: Math.floor(minutes * 60_000),
           incrementMs: Math.floor(incrementSeconds * 1_000),
         })

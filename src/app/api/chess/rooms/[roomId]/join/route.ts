@@ -3,6 +3,7 @@ import { asApiError, jsonResponse, parseJson } from '@/lib/chess/http'
 
 interface JoinRoomBody {
   name: string
+  clientId?: string
 }
 
 interface Params {
@@ -18,6 +19,7 @@ export async function POST(request: Request, { params }: Params): Promise<Respon
     const { snapshot, session } = store.joinRoom({
       roomId: params.roomId,
       name: body.name ?? '',
+      clientId: typeof body.clientId === 'string' ? body.clientId : undefined,
     })
 
     return jsonResponse({

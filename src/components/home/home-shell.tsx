@@ -90,13 +90,14 @@ const FOOTER_ITEMS: FooterItem[] = [
 const ONLINE_TIME_CONTROL_STORAGE_KEY = 'realtime-chess-online-time-control'
 const ONLINE_TIME_CONTROL_ANY_ID = 'all'
 const ONLINE_TIME_CONTROL_OPTIONS: OnlineTimeControlOption[] = [
-  { id: ONLINE_TIME_CONTROL_ANY_ID, label: 'همه', timeControlMinutes: 10, incrementSeconds: 2 },
+  { id: ONLINE_TIME_CONTROL_ANY_ID, label: 'همه', timeControlMinutes: 24 * 60, incrementSeconds: 0 },
   { id: '1-0', label: 'Bullet • 1+0', timeControlMinutes: 1, incrementSeconds: 0 },
   { id: '3-0', label: 'Blitz • 3+0', timeControlMinutes: 3, incrementSeconds: 0 },
   { id: '3-2', label: 'Blitz • 3+2', timeControlMinutes: 3, incrementSeconds: 2 },
   { id: '5-0', label: 'Rapid • 5+0', timeControlMinutes: 5, incrementSeconds: 0 },
   { id: '10-2', label: 'Rapid • 10+2', timeControlMinutes: 10, incrementSeconds: 2 },
   { id: '15-10', label: 'Rapid • 15+10', timeControlMinutes: 15, incrementSeconds: 10 },
+  { id: '24h-0', label: '۲۴ ساعت', timeControlMinutes: 24 * 60, incrementSeconds: 0 },
 ]
 const FRIEND_INVITE_TIME_OPTIONS = ONLINE_TIME_CONTROL_OPTIONS.filter((option) => option.id !== ONLINE_TIME_CONTROL_ANY_ID)
 
@@ -1233,6 +1234,7 @@ export function HomeShell() {
         incrementSeconds: selectedTimeControl.incrementSeconds,
         quickMatch: true,
         matchAnyTimeControl,
+        clientId: profileName.trim() || null,
       })
       localStorage.setItem(
         'realtime-chess-session',
@@ -1308,6 +1310,7 @@ export function HomeShell() {
         name: fromUsername,
         timeControlMinutes: selectedTimeControl.timeControlMinutes,
         incrementSeconds: selectedTimeControl.incrementSeconds,
+        clientId: fromUsername,
       })
       const roomId = createResponse.snapshot.roomId
 
@@ -1370,7 +1373,7 @@ export function HomeShell() {
       await loadNotifications(username, true)
 
       if (action === 'accept') {
-        const joinResponse = await joinRoom({ roomId: invite.roomId, name: username })
+        const joinResponse = await joinRoom({ roomId: invite.roomId, name: username, clientId: username })
         localStorage.setItem(
           'realtime-chess-session',
           JSON.stringify({ roomId: invite.roomId, session: joinResponse.session })

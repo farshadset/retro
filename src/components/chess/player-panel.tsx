@@ -8,9 +8,19 @@ interface PlayerPanelProps {
 }
 
 function formatTimer(ms: number): string {
-  const totalSeconds = Math.ceil(ms / 1000)
+  const clampedMs = Math.max(0, Math.floor(ms))
+  const totalSeconds = Math.floor(clampedMs / 1000)
   const minutes = Math.floor(totalSeconds / 60)
   const seconds = totalSeconds % 60
+  const centiseconds = Math.floor((clampedMs % 1000) / 10)
+  if (minutes >= 60) {
+    const hours = Math.floor(minutes / 60)
+    const minutesRemainder = minutes % 60
+    return `${String(hours).padStart(2, '0')}:${String(minutesRemainder).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+  }
+  if (minutes < 1) {
+    return `${String(seconds).padStart(2, '0')}.${String(centiseconds).padStart(2, '0')}`
+  }
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
 }
 

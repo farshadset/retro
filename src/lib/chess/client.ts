@@ -17,6 +17,7 @@ interface SnapshotResponse {
 }
 
 const API_BASE_URL = (process.env.NEXT_PUBLIC_CHESS_API_BASE_URL ?? '').trim().replace(/\/$/, '')
+const CLIENT_ID_STORAGE_KEY = 'realtime-chess-client-id'
 
 function apiUrl(path: string): string {
   if (!path.startsWith('/')) {
@@ -33,6 +34,19 @@ async function parseApiResponse<T>(response: Response): Promise<T> {
   return payload
 }
 
+function getClientId(): string {
+  if (typeof window === 'undefined') {
+    return ''
+  }
+  const existing = window.localStorage.getItem(CLIENT_ID_STORAGE_KEY)?.trim() ?? ''
+  if (existing) {
+    return existing
+  }
+  const generated = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+  window.localStorage.setItem(CLIENT_ID_STORAGE_KEY, generated)
+  return generated
+}
+
 export async function createRoom(input: {
   name: string
   timeControlMinutes: number
@@ -40,20 +54,29 @@ export async function createRoom(input: {
   quickMatch?: boolean
   matchAnyTimeControl?: boolean
   excludeRoomId?: string
+  clientId?: string | null
 }): Promise<SessionResponse> {
+  const clientId = input.clientId?.trim() || getClientId()
   const response = await fetch(apiUrl('/api/chess/rooms'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
+    body: JSON.stringify({
+      ...input,
+      clientId,
+    }),
   })
   return parseApiResponse<SessionResponse>(response)
 }
 
-export async function joinRoom(input: { roomId: string; name: string }): Promise<SessionResponse> {
+export async function joinRoom(input: { roomId: string; name: string; clientId?: string | null }): Promise<SessionResponse> {
+  const clientId = input.clientId?.trim() || getClientId()
   const response = await fetch(apiUrl(`/api/chess/rooms/${input.roomId}/join`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: input.name }),
+    body: JSON.stringify({
+      name: input.name,
+      clientId,
+    }),
   })
   return parseApiResponse<SessionResponse>(response)
 }
