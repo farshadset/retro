@@ -86,7 +86,7 @@ test.describe('Home actions and profile registration', () => {
     await expect(page.getByTestId('waiting-share-btn')).toBeVisible()
   })
 
-  test('online game shows chat presets and resign button near chat', async ({ page, context }) => {
+  test('online game shows messenger-style chat with sticker categories', async ({ page, context }) => {
     const seed = Date.now()
     const firstUser = `chat-a-${seed}`
     const secondUser = `chat-b-${seed}`
@@ -125,17 +125,29 @@ test.describe('Home actions and profile registration', () => {
     await secondPage.getByTestId('chat-toggle-btn').click()
     await expect(page.getByTestId('chat-panel')).toBeVisible()
     await expect(page.getByTestId('chat-resign-btn')).toBeVisible()
+    await expect(page.getByTestId('chat-composer-tab-text')).toBeVisible()
+    await expect(page.getByTestId('chat-composer-tab-sticker')).toBeVisible()
     await expect(page.getByTestId('chat-quick-ایول')).toBeVisible()
-    await expect(page.getByTestId(`chat-sticker-${encodeURIComponent('♔')}`)).toBeVisible()
-
     await page.getByTestId('chat-quick-ایول').click()
     await expect(page.getByTestId('chat-message-list')).toContainText('ایول')
+
+    await page.getByTestId('chat-composer-tab-sticker').click()
+    await expect(page.getByTestId('chat-sticker-category-reaction')).toBeVisible()
+    await expect(page.getByTestId('chat-sticker-category-chess')).toBeVisible()
+    await page.getByTestId('chat-sticker-category-chess').click()
+    await expect(page.getByTestId(`chat-sticker-${encodeURIComponent('♔')}`)).toBeVisible()
+    await page.getByTestId(`chat-sticker-${encodeURIComponent('♔')}`).click()
+    await expect(page.getByTestId('chat-message-list')).toContainText('♔')
+
     await expect.poll(async () => {
       return secondPage.evaluate(async (roomId) => {
         const response = await fetch(`/api/chess/rooms/${roomId}`)
         const payload = await response.json()
         const chatMessages = payload.snapshot?.chatMessages ?? []
-        return chatMessages.some((message: { value?: string }) => message.value === 'ایول')
+        return (
+          chatMessages.some((message: { value?: string }) => message.value === 'ایول') &&
+          chatMessages.some((message: { value?: string }) => message.value === '♔')
+        )
       }, firstRoomId ?? '')
     }).toBe(true)
 

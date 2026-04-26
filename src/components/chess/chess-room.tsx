@@ -11,6 +11,8 @@ import { ChatMessage, PlayerColor, RoomSession, RoomSnapshot, RoomStatus } from 
 type Mode = 'lobby' | 'playing'
 type JoinMode = 'create' | 'join'
 type PromotionPiece = 'q' | 'r' | 'b' | 'n'
+type ChatComposerTab = 'text' | 'sticker'
+type ChatStickerCategoryId = 'general' | 'reaction' | 'chess'
 
 interface StoredSession {
   roomId: string
@@ -41,8 +43,24 @@ const PROMOTION_PIECE_IMAGE: Record<PlayerColor, Record<PromotionPiece, string>>
 const SESSION_STORAGE_KEY = 'realtime-chess-session'
 const WAITING_ACTIONS_DELAY_MS = 15_000
 const WAITING_ACTIONS_DELAY_STORAGE_KEY = 'realtime-chess-waiting-actions-delay-ms'
-const CHAT_QUICK_MESSAGES = ['ایول', 'عجب حرکتی بود', 'دمت گرم', 'نوبت تو', 'آفرین']
-const CHAT_STICKERS = ['👍', '🔥', '👏', '😮', '😅', '♔', '♕', '♖', '♗', '♘', '♙', '♚', '♛', '♜', '♝', '♞', '♟']
+const CHAT_QUICK_MESSAGES = ['ایول', 'عجب حرکتی بود', 'دمت گرم', 'نوبت تو', 'آفرین', 'حرکت خوبی بود', 'خوبه!']
+const CHAT_STICKER_CATEGORIES: Array<{ id: ChatStickerCategoryId; label: string; stickers: string[] }> = [
+  {
+    id: 'general',
+    label: 'عمومی',
+    stickers: ['👍', '🔥', '👏', '😀', '😍', '😂', '✨', '🎯'],
+  },
+  {
+    id: 'reaction',
+    label: 'واکنش سریع',
+    stickers: ['😮', '😅', '😎', '🤯', '🤝', '🙏', '🙌', '💪'],
+  },
+  {
+    id: 'chess',
+    label: 'شطرنجی',
+    stickers: ['♔', '♕', '♖', '♗', '♘', '♙', '♚', '♛', '♜', '♝', '♞', '♟'],
+  },
+]
 
 function statusLabel(status: RoomStatus): string {
   switch (status) {
@@ -81,6 +99,26 @@ function normalizeRoomId(roomId: string): string {
   return roomId.trim().toUpperCase()
 }
 
+function formatChatMessageTime(createdAt: number): string {
+  try {
+    return new Intl.DateTimeFormat('fa-IR', {
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(createdAt)
+  } catch {
+    return ''
+  }
+}
+
+function lastChatPreview(chatMessages: ChatMessage[]): string {
+  if (chatMessages.length === 0) {
+    return 'پیام آماده یا استیکر بفرست.'
+  }
+  const lastMessage = chatMessages[chatMessages.length - 1]
+  const prefix = lastMessage.senderName ? `${lastMessage.senderName}: ` : ''
+  return `${prefix}${lastMessage.value}`
+}
+
 export function ChessRoom() {
   const [mode, setMode] = useState<Mode>('lobby')
   const [joinMode, setJoinMode] = useState<JoinMode>('create')
@@ -101,9 +139,12 @@ export function ChessRoom() {
   const [isRetryingMatch, setIsRetryingMatch] = useState(false)
   const [isChatPanelOpen, setIsChatPanelOpen] = useState(false)
   const [isSendingChat, setIsSendingChat] = useState(false)
+  const [activeComposerTab, setActiveComposerTab] = useState<ChatComposerTab>('text')
+  const [activeStickerCategory, setActiveStickerCategory] = useState<ChatStickerCategoryId>('general')
   const [nowTick, setNowTick] = useState(Date.now())
   const eventSourceRef = useRef<EventSource | null>(null)
   const clockIntervalRef = useRef<number | null>(null)
+  const chatListRef = useRef<HTMLDivElement | null>(null)
 
   const playerColor = session?.color ?? 'white'
   const isPlayerTurn = Boolean(snapshot && session?.color && snapshot.turn === session.color && snapshot.status === 'active')
@@ -121,7 +162,9 @@ export function ChessRoom() {
     }
     return { ...snapshot, blackTimeMs: Math.max(0, snapshot.blackTimeMs - elapsed) }
   }, [snapshot, nowTick])
-  const chatMessages = hydratedSnapshot?.chatMessages ?? []
+  const chatMessages = useMemo(() => hydratedSnapshot?.chatMessages ?? [], [hydratedSnapshot?.chatMessages])
+  const selectedStickerCategory =
+    CHAT_STICKER_CATEGORIES.find((category) => category.id === activeStickerCategory) ?? CHAT_STICKER_CATEGORIES[0]
 
   const clearSelection = useCallback(() => {
     setSelectedSquare(null)
@@ -197,6 +240,9 @@ export function ChessRoom() {
       applySnapshot((event as MessageEvent<string>).data)
     })
     source.addEventListener('resigned', (event) => {
+      applySnapshot((event as MessageEvent<string>).data)
+    })
+    source.addEventListener('chat', (event) => {
       applySnapshot((event as MessageEvent<string>).data)
     })
     source.onerror = () => {
@@ -295,6 +341,16 @@ export function ChessRoom() {
 
     return () => window.clearTimeout(timeout)
   }, [session, snapshot, waitingActionsDelayMs])
+
+  useEffect(() => {
+    if (!isChatPanelOpen) return
+    const chatContainer = chatListRef.current
+    if (!chatContainer) return
+    chatContainer.scrollTo({
+      top: chatContainer.scrollHeight,
+      behavior: 'smooth',
+    })
+  }, [chatMessages, isChatPanelOpen])
 
   const handleCreateRoom = async () => {
     if (name.trim().length < 2) {
@@ -729,55 +785,97 @@ export function ChessRoom() {
           </div>
 
           <aside className="flex flex-col gap-4">
-            <section className="rounded-md border border-[#3a3734] bg-[#262421] p-3">
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
+            <section className="overflow-hidden rounded-xl border border-[#3a3734] bg-gradient-to-b from-[#2c2926] to-[#24211e] shadow-[0_18px_45px_-28px_rgba(15,23,42,0.85)]">
+              <div className="border-b border-[#3a3734] px-3 py-2.5">
+                <div className="flex items-center justify-between gap-2">
                   <button
                     type="button"
                     onClick={() => setIsChatPanelOpen((prev) => !prev)}
                     data-testid="chat-toggle-btn"
-                    className="rounded-md border border-cyan-400/40 bg-cyan-500/10 px-3 py-1.5 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-500/20"
+                    className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-cyan-400/35 bg-cyan-500/10 px-2.5 py-2 text-right text-xs text-cyan-100 transition hover:bg-cyan-500/20"
                   >
-                    💬 چت
+                    <span className="text-base leading-none">💬</span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-[11px] font-semibold sm:text-xs">چت بازی</span>
+                      <span className="block truncate text-[10px] text-cyan-50/75 sm:text-[11px]">{lastChatPreview(chatMessages)}</span>
+                    </span>
                   </button>
                   <button
                     type="button"
                     disabled={!session.color || hydratedSnapshot.status !== 'active' || isSubmitting}
                     onClick={handleResign}
                     data-testid="chat-resign-btn"
-                    className="rounded-md border border-red-500/40 bg-[#3a2b2b] px-3 py-1.5 text-xs font-semibold text-red-200 transition hover:bg-[#4b3333] disabled:cursor-not-allowed disabled:opacity-60"
+                    className="rounded-lg border border-red-500/45 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-100 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     انصراف
                   </button>
                 </div>
               </div>
               {isChatPanelOpen ? (
-                <div className="space-y-3" data-testid="chat-panel">
-                  <div className="max-h-40 space-y-1 overflow-y-auto rounded-md border border-[#3a3734] bg-[#1f1d1b] p-2" data-testid="chat-message-list">
+                <div className="space-y-3 p-3" data-testid="chat-panel">
+                  <div
+                    ref={chatListRef}
+                    className="h-44 space-y-2 overflow-y-auto rounded-xl border border-[#47413a] bg-[#1e1b18] p-2.5 sm:h-52"
+                    data-testid="chat-message-list"
+                  >
                     {chatMessages.length === 0 ? (
-                      <p className="text-xs text-[#9f9a93]">هنوز پیامی ارسال نشده.</p>
+                      <div className="flex h-full items-center justify-center">
+                        <p className="text-center text-xs text-[#9f9a93]">هنوز پیامی ارسال نشده.</p>
+                      </div>
                     ) : (
                       chatMessages.map((message) => {
                         const isMine = session.color === message.senderColor
                         return (
-                          <div
-                            key={message.id}
-                            className={[
-                              'rounded-md px-2 py-1 text-xs',
-                              isMine ? 'bg-cyan-500/15 text-cyan-100' : 'bg-slate-700/30 text-slate-100',
-                            ].join(' ')}
-                            data-testid={`chat-message-${message.id}`}
-                          >
-                            <span className="ml-1 font-semibold">{message.senderName}:</span>
-                            <span>{message.value}</span>
+                          <div key={message.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`} data-testid={`chat-message-${message.id}`}>
+                            <div
+                              className={[
+                                'max-w-[84%] rounded-2xl px-3 py-2 shadow-sm',
+                                isMine ? 'rounded-br-md bg-cyan-500/16 text-cyan-50' : 'rounded-bl-md bg-slate-700/35 text-slate-100',
+                              ].join(' ')}
+                            >
+                              {!isMine ? <p className="mb-0.5 text-[10px] font-semibold text-slate-300">{message.senderName}</p> : null}
+                              <p className={message.type === 'sticker' ? 'text-xl leading-6' : 'text-xs leading-5'}>{message.value}</p>
+                              <p className="mt-1 text-[10px] text-slate-300/70">{formatChatMessageTime(message.createdAt)}</p>
+                            </div>
                           </div>
                         )
                       })
                     )}
                   </div>
-                  <div className="space-y-1">
-                    <p className="text-[11px] text-[#bfb9b1]">پیام‌های آماده</p>
-                    <div className="flex flex-wrap gap-1">
+
+                  <div className="rounded-lg bg-[#1f1d1b] p-1">
+                    <div className="grid grid-cols-2 gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setActiveComposerTab('text')}
+                        data-testid="chat-composer-tab-text"
+                        className={[
+                          'rounded-md px-2.5 py-1.5 text-xs font-semibold transition',
+                          activeComposerTab === 'text'
+                            ? 'bg-cyan-500/25 text-cyan-100'
+                            : 'text-[#bfb9b1] hover:bg-slate-700/35 hover:text-slate-100',
+                        ].join(' ')}
+                      >
+                        پیام سریع
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveComposerTab('sticker')}
+                        data-testid="chat-composer-tab-sticker"
+                        className={[
+                          'rounded-md px-2.5 py-1.5 text-xs font-semibold transition',
+                          activeComposerTab === 'sticker'
+                            ? 'bg-cyan-500/25 text-cyan-100'
+                            : 'text-[#bfb9b1] hover:bg-slate-700/35 hover:text-slate-100',
+                        ].join(' ')}
+                      >
+                        استیکر
+                      </button>
+                    </div>
+                  </div>
+
+                  {activeComposerTab === 'text' ? (
+                    <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
                       {CHAT_QUICK_MESSAGES.map((message) => (
                         <button
                           key={message}
@@ -785,30 +883,50 @@ export function ChessRoom() {
                           onClick={() => void handleSendChat('text', message)}
                           disabled={isSendingChat || !session.color}
                           data-testid={`chat-quick-${message}`}
-                          className="rounded-md border border-cyan-400/35 bg-cyan-500/10 px-2 py-1 text-[11px] text-cyan-100 transition hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                          className="rounded-lg border border-cyan-400/35 bg-cyan-500/10 px-2 py-1.5 text-[11px] font-medium text-cyan-100 transition hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           {message}
                         </button>
                       ))}
                     </div>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-[11px] text-[#bfb9b1]">استیکرها</p>
-                    <div className="flex flex-wrap gap-1">
-                      {CHAT_STICKERS.map((sticker) => (
-                        <button
-                          key={sticker}
-                          type="button"
-                          onClick={() => void handleSendChat('sticker', sticker)}
-                          disabled={isSendingChat || !session.color}
-                          data-testid={`chat-sticker-${encodeURIComponent(sticker)}`}
-                          className="rounded-md border border-emerald-400/35 bg-emerald-500/10 px-2 py-1 text-sm text-emerald-100 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {sticker}
-                        </button>
-                      ))}
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex gap-1 overflow-x-auto pb-1">
+                        {CHAT_STICKER_CATEGORIES.map((category) => (
+                          <button
+                            key={category.id}
+                            type="button"
+                            onClick={() => setActiveStickerCategory(category.id)}
+                            data-testid={`chat-sticker-category-${category.id}`}
+                            className={[
+                              'shrink-0 rounded-md px-2.5 py-1 text-[11px] font-semibold transition',
+                              activeStickerCategory === category.id
+                                ? 'bg-emerald-500/25 text-emerald-100'
+                                : 'bg-[#302c28] text-[#c9c2ba] hover:bg-[#393430] hover:text-slate-100',
+                            ].join(' ')}
+                          >
+                            {category.label}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-6 gap-1.5 sm:grid-cols-8">
+                        {selectedStickerCategory.stickers.map((sticker) => (
+                          <button
+                            key={sticker}
+                            type="button"
+                            onClick={() => void handleSendChat('sticker', sticker)}
+                            disabled={isSendingChat || !session.color}
+                            data-testid={`chat-sticker-${encodeURIComponent(sticker)}`}
+                            className="rounded-lg border border-emerald-400/35 bg-emerald-500/10 px-1 py-1.5 text-lg text-emerald-100 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {sticker}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  </div>
+                  )}
+
+                  {isSendingChat ? <p className="text-[11px] text-cyan-100/80">در حال ارسال...</p> : null}
                 </div>
               ) : null}
             </section>
