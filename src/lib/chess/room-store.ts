@@ -207,6 +207,8 @@ export class RoomStore {
         return true
       }
     }
+    // Advance the clock anchor so future ticks only subtract new elapsed time.
+    room.activeSince = now
     return false
   }
 
