@@ -7,9 +7,8 @@ import { MoveList } from './move-list'
 import { PlayerPanel } from './player-panel'
 import { createRoom, fetchRoom, joinRoom, makeMove, resign, roomEventsUrl, sendChatMessage } from '@/lib/chess/client'
 import { ChatMessage, PlayerColor, RoomSession, RoomSnapshot, RoomStatus } from '@/lib/chess/types'
+import { PROFILE_USERNAME_STORAGE_KEY } from '@/lib/profile/constants'
 
-type Mode = 'lobby' | 'playing'
-type JoinMode = 'create' | 'join'
 type PromotionPiece = 'q' | 'r' | 'b' | 'n'
 type ChatComposerTab = 'text' | 'sticker'
 type ChatStickerCategoryId = 'general' | 'reaction' | 'chess'
@@ -120,12 +119,6 @@ function lastChatPreview(chatMessages: ChatMessage[]): string {
 }
 
 export function ChessRoom() {
-  const [mode, setMode] = useState<Mode>('lobby')
-  const [joinMode, setJoinMode] = useState<JoinMode>('create')
-  const [name, setName] = useState('')
-  const [roomInput, setRoomInput] = useState('')
-  const [timeControlMinutes, setTimeControlMinutes] = useState(10)
-  const [incrementSeconds, setIncrementSeconds] = useState(2)
   const [snapshot, setSnapshot] = useState<RoomSnapshot | null>(null)
   const [session, setSession] = useState<RoomSession | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -145,6 +138,8 @@ export function ChessRoom() {
   const eventSourceRef = useRef<EventSource | null>(null)
   const clockIntervalRef = useRef<number | null>(null)
   const chatListRef = useRef<HTMLDivElement | null>(null)
+  const autoBootstrappingRef = useRef(false)
+  const autoPlayerNameRef = useRef<string>('')
 
   const playerColor = session?.color ?? 'white'
   const isPlayerTurn = Boolean(snapshot && session?.color && snapshot.turn === session.color && snapshot.status === 'active')
@@ -203,6 +198,19 @@ export function ChessRoom() {
 
   const clearPersistedSession = useCallback(() => {
     localStorage.removeItem(SESSION_STORAGE_KEY)
+  }, [])
+
+  const resolveAutoPlayerName = useCallback((): string => {
+    if (autoPlayerNameRef.current) {
+      return autoPlayerNameRef.current
+    }
+    const storedProfileName = localStorage.getItem(PROFILE_USERNAME_STORAGE_KEY)?.trim() ?? ''
+    if (storedProfileName.length >= 2) {
+      autoPlayerNameRef.current = storedProfileName.slice(0, 32)
+      return autoPlayerNameRef.current
+    }
+    autoPlayerNameRef.current = `Guest-${Math.floor(1000 + Math.random() * 9000)}`
+    return autoPlayerNameRef.current
   }, [])
 
   const disconnectEvents = useCallback(() => {
@@ -268,7 +276,6 @@ export function ChessRoom() {
     (nextSnapshot: RoomSnapshot, nextSession: RoomSession) => {
       setSnapshot(nextSnapshot)
       setSession(nextSession)
-      setMode('playing')
       setError(null)
       setNowTick(Date.now())
       clearSelection()
@@ -288,29 +295,63 @@ export function ChessRoom() {
   }, [])
 
   useEffect(() => {
-    const roomIdFromQuery = normalizeRoomId(new URLSearchParams(window.location.search).get('room') ?? '')
-    if (roomIdFromQuery) {
-      setRoomInput(roomIdFromQuery)
-      setJoinMode('join')
-    }
+    let cancelled = false
 
-    const raw = localStorage.getItem(SESSION_STORAGE_KEY)
-    if (!raw) return
-
-    try {
-      const parsed = JSON.parse(raw) as StoredSession
-      if (!parsed?.roomId || !parsed?.session?.token) return
-      fetchRoom(parsed.roomId)
-        .then((response) => {
-          enterGame(response.snapshot, parsed.session)
-        })
-        .catch(() => {
+    const bootstrapGame = async () => {
+      const roomIdFromQuery = normalizeRoomId(new URLSearchParams(window.location.search).get('room') ?? '')
+      const raw = localStorage.getItem(SESSION_STORAGE_KEY)
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw) as StoredSession
+          if (parsed?.roomId && parsed?.session?.token) {
+            const response = await fetchRoom(parsed.roomId)
+            if (cancelled) return
+            enterGame(response.snapshot, parsed.session)
+            return
+          }
+        } catch {
           clearPersistedSession()
-        })
-    } catch {
-      clearPersistedSession()
+        }
+      }
+
+      if (autoBootstrappingRef.current) {
+        return
+      }
+      autoBootstrappingRef.current = true
+      setIsSubmitting(true)
+      setError(null)
+
+      try {
+        const autoName = resolveAutoPlayerName()
+        const response = roomIdFromQuery
+          ? await joinRoom({ roomId: roomIdFromQuery, name: autoName })
+          : await createRoom({
+              name: autoName,
+              timeControlMinutes: 10,
+              incrementSeconds: 2,
+              quickMatch: true,
+              matchAnyTimeControl: true,
+            })
+        if (cancelled) return
+        window.history.replaceState({}, '', `/online?room=${response.snapshot.roomId}`)
+        enterGame(response.snapshot, response.session)
+      } catch (cause) {
+        if (!cancelled) {
+          setError(cause instanceof Error ? cause.message : 'Could not start online game.')
+        }
+      } finally {
+        autoBootstrappingRef.current = false
+        if (!cancelled) {
+          setIsSubmitting(false)
+        }
+      }
     }
-  }, [clearPersistedSession, enterGame])
+
+    void bootstrapGame()
+    return () => {
+      cancelled = true
+    }
+  }, [clearPersistedSession, enterGame, resolveAutoPlayerName])
 
   useEffect(() => {
     return () => disconnectEvents()
@@ -351,52 +392,6 @@ export function ChessRoom() {
       behavior: 'smooth',
     })
   }, [chatMessages, isChatPanelOpen])
-
-  const handleCreateRoom = async () => {
-    if (name.trim().length < 2) {
-      setError('Name must be at least 2 characters.')
-      return
-    }
-    setIsSubmitting(true)
-    setError(null)
-    try {
-      const response = await createRoom({
-        name: name.trim(),
-        timeControlMinutes,
-        incrementSeconds,
-      })
-      window.history.replaceState({}, '', `/?room=${response.snapshot.roomId}`)
-      enterGame(response.snapshot, response.session)
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not create room.')
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-
-  const handleJoinRoom = async () => {
-    if (name.trim().length < 2) {
-      setError('Name must be at least 2 characters.')
-      return
-    }
-    const roomId = normalizeRoomId(roomInput)
-    if (roomId.length < 4) {
-      setError('Room ID is invalid.')
-      return
-    }
-
-    setIsSubmitting(true)
-    setError(null)
-    try {
-      const response = await joinRoom({ roomId, name: name.trim() })
-      window.history.replaceState({}, '', `/?room=${response.snapshot.roomId}`)
-      enterGame(response.snapshot, response.session)
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not join room.')
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
 
   const handleSquareClick = async (square: Square) => {
     if (!snapshot || !session || !reconstructedChess) return
@@ -550,105 +545,27 @@ export function ChessRoom() {
   const leaveGame = () => {
     disconnectEvents()
     clearPersistedSession()
-    setMode('lobby')
     setSession(null)
     setSnapshot(null)
-    setRoomInput('')
-    window.history.replaceState({}, '', '/')
+    window.location.assign('/')
   }
 
-  if (mode === 'lobby' || !hydratedSnapshot || !session) {
+  if (!hydratedSnapshot || !session) {
     return (
       <main className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 px-4 py-12 text-slate-100">
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
-          <header className="space-y-3 text-center">
-            <p className="text-sm uppercase tracking-[0.25em] text-cyan-300">Realtime Arena</p>
-            <h1 className="text-4xl font-black tracking-tight sm:text-5xl">Lightning Chess</h1>
-            <p className="mx-auto max-w-xl text-sm text-slate-300 sm:text-base">
-              Fast real-time chess with synchronized clocks, legal-move enforcement, and instant room sharing.
+        <div className="mx-auto flex w-full max-w-md flex-col gap-4">
+          <section className="rounded-2xl border border-slate-700 bg-slate-900/70 p-6 text-center backdrop-blur">
+            <h1 className="text-xl font-black text-slate-100">در حال آماده‌سازی بازی آنلاین...</h1>
+            <p className="mt-2 text-sm text-slate-300">
+              {isSubmitting ? 'در حال ساخت یا ورود خودکار به اتاق. لطفاً کمی صبر کنید.' : 'در حال تلاش مجدد برای اتصال.'}
             </p>
-          </header>
-
-          <section className="rounded-2xl border border-slate-700 bg-slate-900/70 p-5 backdrop-blur sm:p-8">
-            <div className="mb-6 flex gap-2 rounded-xl bg-slate-800/80 p-1">
-              <button
-                type="button"
-                className={`flex-1 rounded-lg px-4 py-2 text-sm font-semibold transition ${
-                  joinMode === 'create' ? 'bg-cyan-500 text-slate-950' : 'text-slate-300 hover:text-white'
-                }`}
-                onClick={() => setJoinMode('create')}
-              >
-                Create room
-              </button>
-              <button
-                type="button"
-                className={`flex-1 rounded-lg px-4 py-2 text-sm font-semibold transition ${
-                  joinMode === 'join' ? 'bg-cyan-500 text-slate-950' : 'text-slate-300 hover:text-white'
-                }`}
-                onClick={() => setJoinMode('join')}
-              >
-                Join room
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <label className="block space-y-2">
-                <span className="text-sm font-medium text-slate-200">Player name</span>
-                <input
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                  className="w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3 text-sm outline-none ring-cyan-400 transition focus:ring-2"
-                  placeholder="e.g. Ali"
-                />
-              </label>
-
-              {joinMode === 'create' ? (
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <label className="block space-y-2">
-                    <span className="text-sm font-medium text-slate-200">Base time (minutes)</span>
-                    <input
-                      value={timeControlMinutes}
-                      onChange={(event) => setTimeControlMinutes(Number(event.target.value))}
-                      className="w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3 text-sm outline-none ring-cyan-400 transition focus:ring-2"
-                      type="number"
-                      min={1}
-                      max={60}
-                    />
-                  </label>
-                  <label className="block space-y-2">
-                    <span className="text-sm font-medium text-slate-200">Increment (seconds)</span>
-                    <input
-                      value={incrementSeconds}
-                      onChange={(event) => setIncrementSeconds(Number(event.target.value))}
-                      className="w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3 text-sm outline-none ring-cyan-400 transition focus:ring-2"
-                      type="number"
-                      min={0}
-                      max={30}
-                    />
-                  </label>
-                </div>
-              ) : (
-                <label className="block space-y-2">
-                  <span className="text-sm font-medium text-slate-200">Room ID</span>
-                  <input
-                    value={roomInput}
-                    onChange={(event) => setRoomInput(event.target.value.toUpperCase())}
-                    className="w-full rounded-lg border border-slate-600 bg-slate-950 px-4 py-3 text-sm uppercase outline-none ring-cyan-400 transition focus:ring-2"
-                    placeholder="AB12CD"
-                  />
-                </label>
-              )}
-            </div>
-
             {error ? <p className="mt-4 rounded-lg bg-red-500/15 px-4 py-3 text-sm text-red-200">{error}</p> : null}
-
             <button
               type="button"
-              disabled={isSubmitting}
-              onClick={joinMode === 'create' ? handleCreateRoom : handleJoinRoom}
-              className="mt-6 w-full rounded-xl bg-cyan-400 px-5 py-3 text-sm font-bold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-70"
+              onClick={() => window.location.reload()}
+              className="mt-4 rounded-lg border border-cyan-400/40 bg-cyan-500/10 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-500/20"
             >
-              {isSubmitting ? 'Please wait...' : joinMode === 'create' ? 'Create and play' : 'Join game'}
+              تلاش مجدد
             </button>
           </section>
         </div>
@@ -656,7 +573,7 @@ export function ChessRoom() {
     )
   }
 
-  const roomShareUrl = `${window.location.origin}/?room=${hydratedSnapshot.roomId}`
+  const roomShareUrl = `${window.location.origin}/online?room=${hydratedSnapshot.roomId}`
 
   return (
     <main className="min-h-screen bg-[#1f1d1b] px-2 py-5 text-slate-100 sm:px-5 sm:py-6">
