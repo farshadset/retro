@@ -18,7 +18,7 @@ interface SessionRecord {
   playerId: string
   color: PlayerColor | null
   name: string
-  clientId: string | null
+  clientId: string
 }
 
 interface RoomState {
@@ -322,7 +322,7 @@ export class RoomStore {
             playerId,
             color: 'white',
             name,
-            clientId: input.clientId?.trim() || null,
+            clientId: input.clientId?.trim() || '',
           },
         ],
       ]),
@@ -433,7 +433,7 @@ export class RoomStore {
       playerId,
       color,
       name,
-      clientId: input.clientId?.trim() || null,
+      clientId: input.clientId?.trim() || '',
     }
     waitingRoom.sessionsByToken.set(token, session)
     waitingRoom.updatedAt = now
@@ -460,7 +460,7 @@ export class RoomStore {
     const playerId = randomUUID()
     let color: PlayerColor | null = null
 
-    const joiningClientId = input.clientId?.trim() || null
+    const joiningClientId = input.clientId?.trim() || ''
 
     if (!room.players.black) {
       if (joiningClientId) {

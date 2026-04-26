@@ -330,7 +330,6 @@ export function ChessRoom() {
               timeControlMinutes: 10,
               incrementSeconds: 2,
               quickMatch: true,
-              matchAnyTimeControl: true,
             })
         if (cancelled) return
         window.history.replaceState({}, '', `/online?room=${response.snapshot.roomId}`)
@@ -489,7 +488,6 @@ export function ChessRoom() {
         timeControlMinutes: Math.max(1, Math.round(snapshot.timeControlMs / 60_000)),
         incrementSeconds: Math.max(0, Math.round(snapshot.incrementMs / 1_000)),
         quickMatch: true,
-        matchAnyTimeControl: true,
         excludeRoomId: snapshot.roomId,
       })
       window.history.replaceState({}, '', `/online?room=${response.snapshot.roomId}`)

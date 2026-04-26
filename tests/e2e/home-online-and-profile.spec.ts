@@ -12,7 +12,7 @@ test.describe('Home actions and profile registration', () => {
     await page.evaluate(() => localStorage.clear())
     await page.reload()
 
-    await expect(page.getByTestId('online-time-selector-btn')).toContainText('همه')
+    await expect(page.getByTestId('online-time-selector-btn')).toContainText('Rapid • 10+2')
 
     await page.getByTestId('online-play-btn').click()
     await expect(page).toHaveURL(/(\/online\?room=|\?room=)/)
@@ -28,7 +28,7 @@ test.describe('Home actions and profile registration', () => {
     await expect(page.getByTestId('online-time-selector-btn')).toContainText('Blitz • 3+2')
   })
 
-  test('online quick match with همه starts online game without requiring time selection', async ({ page, context }) => {
+  test('online quick match starts online game without requiring extra setup', async ({ page, context }) => {
     const seed = Date.now()
     const firstUser = `quickmatch-a-${seed}`
     const secondUser = `quickmatch-b-${seed}`
@@ -76,7 +76,7 @@ test.describe('Home actions and profile registration', () => {
     }
     const secondPage = await secondContext.newPage()
     await registerUser(secondPage, secondUser)
-    await expect(secondPage.getByTestId('online-time-selector-btn')).toContainText('همه')
+    await expect(secondPage.getByTestId('online-time-selector-btn')).toContainText('Rapid • 10+2')
     await secondPage.getByTestId('online-play-btn').click()
     await expect(secondPage).toHaveURL(/\/online\?room=/)
     const secondRoomId = new URL(secondPage.url()).searchParams.get('room')
@@ -87,9 +87,6 @@ test.describe('Home actions and profile registration', () => {
 
   test('waiting actions panel appears and retry/share options are shown', async ({ page }) => {
     await page.goto('/online')
-    await page.getByRole('button', { name: 'Create room' }).click()
-    await page.getByLabel('Player name').fill('waiting-user')
-    await page.getByRole('button', { name: 'Create and play' }).click()
 
     await expect(page).toHaveURL(/(\/online\?room=|\?room=)/)
     await expect(page.getByRole('heading', { name: 'Waiting for opponent' })).toBeVisible()
@@ -108,6 +105,18 @@ test.describe('Home actions and profile registration', () => {
       await targetPage.goto('/')
       await targetPage.evaluate(() => localStorage.clear())
       await targetPage.reload()
+      await expect
+        .poll(async () => {
+          return targetPage.evaluate(async () => {
+            const response = await fetch('/api/profile?action=health')
+            if (!response.ok) {
+              return 'not-ready'
+            }
+            const payload = await response.json()
+            return payload.status ?? 'not-ready'
+          })
+        })
+        .toBe('ok')
       await targetPage.getByTestId('footer-tab-profile').click()
       await targetPage.getByTestId('profile-mode-register').click()
       await targetPage.getByTestId('profile-name-input').fill(username)

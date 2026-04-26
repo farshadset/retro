@@ -74,6 +74,17 @@ interface ApiResponse {
   error?: { code?: string; message?: string }
 }
 
+function getOrCreateChessClientId(): string {
+  const storageKey = 'realtime-chess-client-id'
+  const existing = localStorage.getItem(storageKey)?.trim() ?? ''
+  if (existing) {
+    return existing
+  }
+  const generated = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+  localStorage.setItem(storageKey, generated)
+  return generated
+}
+
 interface GameInviteApiResponse {
   invite?: { toUsername: string; inviteId: string }
   response?: { inviteId: string; action: 'accept' | 'reject' }
@@ -88,9 +99,8 @@ const FOOTER_ITEMS: FooterItem[] = [
 ]
 
 const ONLINE_TIME_CONTROL_STORAGE_KEY = 'realtime-chess-online-time-control'
-const ONLINE_TIME_CONTROL_ANY_ID = 'all'
+const ONLINE_TIME_CONTROL_DEFAULT_ID = '10-2'
 const ONLINE_TIME_CONTROL_OPTIONS: OnlineTimeControlOption[] = [
-  { id: ONLINE_TIME_CONTROL_ANY_ID, label: 'همه', timeControlMinutes: 24 * 60, incrementSeconds: 0 },
   { id: '1-0', label: 'Bullet • 1+0', timeControlMinutes: 1, incrementSeconds: 0 },
   { id: '3-0', label: 'Blitz • 3+0', timeControlMinutes: 3, incrementSeconds: 0 },
   { id: '3-2', label: 'Blitz • 3+2', timeControlMinutes: 3, incrementSeconds: 2 },
@@ -99,7 +109,7 @@ const ONLINE_TIME_CONTROL_OPTIONS: OnlineTimeControlOption[] = [
   { id: '15-10', label: 'Rapid • 15+10', timeControlMinutes: 15, incrementSeconds: 10 },
   { id: '24h-0', label: '۲۴ ساعت', timeControlMinutes: 24 * 60, incrementSeconds: 0 },
 ]
-const FRIEND_INVITE_TIME_OPTIONS = ONLINE_TIME_CONTROL_OPTIONS.filter((option) => option.id !== ONLINE_TIME_CONTROL_ANY_ID)
+const FRIEND_INVITE_TIME_OPTIONS = ONLINE_TIME_CONTROL_OPTIONS
 
 async function parseJsonSafe(response: Response): Promise<ApiResponse> {
   try {
@@ -989,7 +999,7 @@ export function HomeShell() {
   const [isStartingOnline, setIsStartingOnline] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [storageReady, setStorageReady] = useState(false)
-  const [selectedTimeControlId, setSelectedTimeControlId] = useState<string>(ONLINE_TIME_CONTROL_ANY_ID)
+  const [selectedTimeControlId, setSelectedTimeControlId] = useState<string>(ONLINE_TIME_CONTROL_DEFAULT_ID)
   const [isTimeControlOptionsOpen, setIsTimeControlOptionsOpen] = useState(false)
 
   const clearAuthState = useCallback((message?: string) => {
@@ -1209,21 +1219,20 @@ export function HomeShell() {
   useEffect(() => {
     const saved = localStorage.getItem(ONLINE_TIME_CONTROL_STORAGE_KEY)?.trim() ?? ''
     if (!saved) {
-      setSelectedTimeControlId(ONLINE_TIME_CONTROL_ANY_ID)
+      setSelectedTimeControlId(ONLINE_TIME_CONTROL_DEFAULT_ID)
       return
     }
     const exists = ONLINE_TIME_CONTROL_OPTIONS.some((option) => option.id === saved)
     if (exists) {
       setSelectedTimeControlId(saved)
     } else {
-      setSelectedTimeControlId(ONLINE_TIME_CONTROL_ANY_ID)
+      setSelectedTimeControlId(ONLINE_TIME_CONTROL_DEFAULT_ID)
     }
   }, [])
 
   const handleStartOnline = async () => {
     const selectedTimeControl =
       ONLINE_TIME_CONTROL_OPTIONS.find((option) => option.id === selectedTimeControlId) ?? ONLINE_TIME_CONTROL_OPTIONS[0]
-    const matchAnyTimeControl = selectedTimeControl.id === ONLINE_TIME_CONTROL_ANY_ID
     const preferredName = profileName.trim() || 'Guest'
     setIsStartingOnline(true)
     setBannerMessage(null)
@@ -1233,7 +1242,6 @@ export function HomeShell() {
         timeControlMinutes: selectedTimeControl.timeControlMinutes,
         incrementSeconds: selectedTimeControl.incrementSeconds,
         quickMatch: true,
-        matchAnyTimeControl,
         clientId: profileName.trim() || null,
       })
       localStorage.setItem(
@@ -1411,7 +1419,7 @@ export function HomeShell() {
   }
 
   const selectedTimeControlLabel =
-    ONLINE_TIME_CONTROL_OPTIONS.find((option) => option.id === selectedTimeControlId)?.label ?? 'همه'
+    ONLINE_TIME_CONTROL_OPTIONS.find((option) => option.id === selectedTimeControlId)?.label ?? 'Rapid • 10+2'
 
   const handleSubmitAuth = async () => {
     if (!storageReady) {

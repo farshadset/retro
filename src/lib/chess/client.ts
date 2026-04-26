@@ -52,7 +52,6 @@ export async function createRoom(input: {
   timeControlMinutes: number
   incrementSeconds: number
   quickMatch?: boolean
-  matchAnyTimeControl?: boolean
   excludeRoomId?: string
   clientId?: string | null
 }): Promise<SessionResponse> {
