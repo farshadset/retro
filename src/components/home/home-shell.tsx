@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createRoom } from '@/lib/chess/client'
+import { createRoom, joinRoom } from '@/lib/chess/client'
 import { PROFILE_USERNAME_STORAGE_KEY } from '@/lib/profile/constants'
 
 type FooterTab = 'home' | 'profile' | 'puzzle' | 'news'
@@ -17,6 +17,9 @@ type NotificationType =
   | 'friend_request_rejected'
   | 'friend_request_canceled'
   | 'friend_removed'
+  | 'game_invite_received'
+  | 'game_invite_accepted'
+  | 'game_invite_rejected'
 
 interface FriendPresenceItem {
   username: string
@@ -30,6 +33,15 @@ interface NotificationItem {
   message: string
   createdAt: number
   read: boolean
+}
+
+interface GameInviteItem {
+  id: string
+  fromUsername: string
+  roomId: string
+  timeControlMinutes: number
+  incrementSeconds: number
+  createdAt: number
 }
 
 interface FooterItem {
@@ -53,9 +65,18 @@ interface ApiResponse {
   incomingRequests?: string[]
   outgoingRequests?: string[]
   incomingCount?: number
+  incomingGameInvites?: GameInviteItem[]
   users?: Array<{ username: string; relation: FriendRelation }>
   notifications?: NotificationItem[]
   unreadCount?: number
+  invite?: { toUsername: string; inviteId: string }
+  response?: { inviteId: string; action: 'accept' | 'reject' }
+  error?: { code?: string; message?: string }
+}
+
+interface GameInviteApiResponse {
+  invite?: { toUsername: string; inviteId: string }
+  response?: { inviteId: string; action: 'accept' | 'reject' }
   error?: { code?: string; message?: string }
 }
 
@@ -77,6 +98,7 @@ const ONLINE_TIME_CONTROL_OPTIONS: OnlineTimeControlOption[] = [
   { id: '10-2', label: 'Rapid • 10+2', timeControlMinutes: 10, incrementSeconds: 2 },
   { id: '15-10', label: 'Rapid • 15+10', timeControlMinutes: 15, incrementSeconds: 10 },
 ]
+const FRIEND_INVITE_TIME_OPTIONS = ONLINE_TIME_CONTROL_OPTIONS.filter((option) => option.id !== ONLINE_TIME_CONTROL_ANY_ID)
 
 async function parseJsonSafe(response: Response): Promise<ApiResponse> {
   try {
@@ -147,11 +169,15 @@ function HomeContent({
   onOpenFriendPlay,
   onStartBotGame,
   onStartPersonalGame,
+  onOpenInviteModal,
+  onRespondGameInvite,
   onBackToMenu,
   onToggleTimeControlOptions,
   onSelectTimeControl,
   homePanel,
   friendPresence,
+  incomingGameInvites,
+  isInviteActionLoading,
   selectedTimeControlLabel,
   isTimeControlOptionsOpen,
   timeControlOptions,
@@ -161,11 +187,15 @@ function HomeContent({
   onOpenFriendPlay: () => void
   onStartBotGame: () => void
   onStartPersonalGame: () => void
+  onOpenInviteModal: (targetUsername: string) => void
+  onRespondGameInvite: (invite: GameInviteItem, action: 'accept' | 'reject') => void
   onBackToMenu: () => void
   onToggleTimeControlOptions: () => void
   onSelectTimeControl: (optionId: string) => void
   homePanel: HomePanel
   friendPresence: FriendPresenceItem[]
+  incomingGameInvites: GameInviteItem[]
+  isInviteActionLoading: boolean
   selectedTimeControlLabel: string
   isTimeControlOptionsOpen: boolean
   timeControlOptions: OnlineTimeControlOption[]
@@ -189,6 +219,53 @@ function HomeContent({
           </button>
         </div>
         <p className="text-sm text-slate-300">وضعیت آنلاین دوستانت را اینجا می‌بینی.</p>
+        <div className="space-y-2 rounded-lg border border-slate-700 bg-slate-950/50 p-3">
+          <p className="text-xs text-slate-300">درخواست‌های بازی دریافتی</p>
+          {incomingGameInvites.length === 0 ? (
+            <p className="text-xs text-slate-500" data-testid="friend-play-invite-empty">
+              فعلاً درخواست بازی جدیدی نداری.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {incomingGameInvites.map((invite) => (
+                <div
+                  key={invite.id}
+                  className="space-y-2 rounded-md border border-slate-700 bg-slate-900/75 px-2 py-2"
+                  data-testid={`friend-play-invite-row-${invite.id}`}
+                >
+                  <p className="text-xs text-slate-100">
+                    <span className="font-semibold text-cyan-200">{invite.fromUsername}</span>
+                    {' '}شما را به بازی {' '}
+                    <span className="font-semibold text-cyan-100">
+                      {invite.timeControlMinutes}+{invite.incrementSeconds}
+                    </span>
+                    {' '}دعوت کرده است.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onRespondGameInvite(invite, 'accept')}
+                      disabled={isInviteActionLoading}
+                      data-testid={`friend-play-invite-accept-${invite.id}`}
+                      className="rounded-md bg-emerald-500 px-2.5 py-1 text-xs font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      قبول
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onRespondGameInvite(invite, 'reject')}
+                      disabled={isInviteActionLoading}
+                      data-testid={`friend-play-invite-reject-${invite.id}`}
+                      className="rounded-md bg-rose-500 px-2.5 py-1 text-xs font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      رد
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
         {friendPresence.length === 0 ? (
           <p className="rounded-lg border border-slate-700 bg-slate-950/70 px-3 py-3 text-sm text-slate-400" data-testid="friend-play-empty">
             هنوز دوستی نداری. اول از تب پروفایل دوست اضافه کن.
@@ -213,6 +290,16 @@ function HomeContent({
                   <span className={friend.online ? 'text-emerald-300' : 'text-slate-400'}>
                     {friend.online ? 'آنلاین' : 'آفلاین'}
                   </span>
+                  {friend.online ? (
+                    <button
+                      type="button"
+                      onClick={() => onOpenInviteModal(friend.username)}
+                      data-testid={`friend-play-start-${friend.username}`}
+                      className="rounded-md bg-cyan-400 px-2.5 py-1 text-[11px] font-bold text-slate-950 transition hover:bg-cyan-300"
+                    >
+                      بازی
+                    </button>
+                  ) : null}
                 </div>
               </div>
             ))}
@@ -889,9 +976,14 @@ export function HomeShell() {
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const [notificationUnreadCount, setNotificationUnreadCount] = useState(0)
   const [friendPresence, setFriendPresence] = useState<FriendPresenceItem[]>([])
+  const [incomingGameInvites, setIncomingGameInvites] = useState<GameInviteItem[]>([])
   const [friendSearchQuery, setFriendSearchQuery] = useState('')
   const [friendSearchResults, setFriendSearchResults] = useState<Array<{ username: string; relation: FriendRelation }>>([])
   const [friendsLoading, setFriendsLoading] = useState(false)
+  const [isInviteActionLoading, setIsInviteActionLoading] = useState(false)
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false)
+  const [selectedInviteFriendUsername, setSelectedInviteFriendUsername] = useState('')
+  const [selectedInviteTimeControlId, setSelectedInviteTimeControlId] = useState<string>(FRIEND_INVITE_TIME_OPTIONS[0]?.id ?? '10-2')
   const [bannerMessage, setBannerMessage] = useState<string | null>(null)
   const [isStartingOnline, setIsStartingOnline] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -911,6 +1003,9 @@ export function HomeShell() {
     setOutgoingRequests([])
     setIncomingRequestCount(0)
     setFriendPresence([])
+    setIncomingGameInvites([])
+    setIsInviteModalOpen(false)
+    setSelectedInviteFriendUsername('')
     setNotifications([])
     setNotificationUnreadCount(0)
     setHomePanel('menu')
@@ -949,6 +1044,7 @@ export function HomeShell() {
       setFriendPresence(payload.friendPresence ?? fallbackPresence)
       setIncomingRequests(payload.incomingRequests ?? [])
       setOutgoingRequests(payload.outgoingRequests ?? [])
+      setIncomingGameInvites(payload.incomingGameInvites ?? [])
       setIncomingRequestCount(payload.incomingCount ?? 0)
       return true
     } catch {
@@ -1060,8 +1156,11 @@ export function HomeShell() {
       setIncomingRequests([])
       setOutgoingRequests([])
       setIncomingRequestCount(0)
+      setIncomingGameInvites([])
       setNotifications([])
       setNotificationUnreadCount(0)
+      setIsInviteModalOpen(false)
+      setSelectedInviteFriendUsername('')
       setHomePanel('menu')
       return
     }
@@ -1164,6 +1263,129 @@ export function HomeShell() {
     }
     setHomePanel('friend-play')
     void loadFriendsOverview(profileName, true)
+  }
+
+  const handleOpenInviteModal = (targetUsername: string) => {
+    const normalized = targetUsername.trim()
+    if (!normalized) {
+      return
+    }
+    setSelectedInviteFriendUsername(normalized)
+    const defaultOption = FRIEND_INVITE_TIME_OPTIONS.find((option) => option.id === '10-2') ?? FRIEND_INVITE_TIME_OPTIONS[0]
+    if (defaultOption) {
+      setSelectedInviteTimeControlId(defaultOption.id)
+    }
+    setIsInviteModalOpen(true)
+  }
+
+  const handleCloseInviteModal = () => {
+    setIsInviteModalOpen(false)
+    setSelectedInviteFriendUsername('')
+  }
+
+  const handleSelectInviteTimeControl = (optionId: string) => {
+    const selectedOption = FRIEND_INVITE_TIME_OPTIONS.find((option) => option.id === optionId)
+    if (!selectedOption) {
+      return
+    }
+    setSelectedInviteTimeControlId(selectedOption.id)
+  }
+
+  const handleSendGameInvite = async () => {
+    const fromUsername = profileName.trim()
+    const toUsername = selectedInviteFriendUsername.trim()
+    const selectedTimeControl =
+      FRIEND_INVITE_TIME_OPTIONS.find((option) => option.id === selectedInviteTimeControlId) ?? FRIEND_INVITE_TIME_OPTIONS[0]
+    if (!fromUsername || !toUsername || !selectedTimeControl) {
+      setBannerMessage('ارسال دعوت بازی ممکن نیست.')
+      return
+    }
+
+    setIsInviteActionLoading(true)
+    setBannerMessage(null)
+    try {
+      const createResponse = await createRoom({
+        name: fromUsername,
+        timeControlMinutes: selectedTimeControl.timeControlMinutes,
+        incrementSeconds: selectedTimeControl.incrementSeconds,
+      })
+      const roomId = createResponse.snapshot.roomId
+
+      const inviteResponse = await fetch('/api/profile?action=gameInviteSend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fromUsername,
+          toUsername,
+          roomId,
+          timeControlMinutes: selectedTimeControl.timeControlMinutes,
+          incrementSeconds: selectedTimeControl.incrementSeconds,
+        }),
+      })
+      const invitePayload = await parseJsonSafe(inviteResponse)
+      if (!inviteResponse.ok) {
+        setBannerMessage(invitePayload.error?.message ?? 'ارسال دعوت بازی انجام نشد.')
+        return
+      }
+
+      localStorage.setItem('realtime-chess-session', JSON.stringify({ roomId, session: createResponse.session }))
+      handleCloseInviteModal()
+      await loadFriendsOverview(fromUsername, true)
+      await loadNotifications(fromUsername, true)
+      setBannerMessage(`دعوت بازی ${selectedTimeControl.timeControlMinutes}+${selectedTimeControl.incrementSeconds} برای ${toUsername} ارسال شد.`)
+      router.push(`/online?room=${roomId}`)
+    } catch {
+      setBannerMessage('خطا در ارسال دعوت بازی.')
+    } finally {
+      setIsInviteActionLoading(false)
+    }
+  }
+
+  const handleRespondGameInvite = async (invite: GameInviteItem, action: 'accept' | 'reject') => {
+    const username = profileName.trim()
+    if (!username) {
+      setBannerMessage('ابتدا وارد حساب کاربری شوید.')
+      return
+    }
+
+    setIsInviteActionLoading(true)
+    setBannerMessage(null)
+    try {
+      const response = await fetch('/api/profile?action=gameInviteRespond', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username,
+          inviteId: invite.id,
+          action,
+        }),
+      })
+      const payload = await parseJsonSafe(response)
+      if (!response.ok) {
+        setBannerMessage(payload.error?.message ?? 'پاسخ به دعوت بازی انجام نشد.')
+        return
+      }
+
+      await loadFriendsOverview(username, true)
+      await loadNotifications(username, true)
+
+      if (action === 'accept') {
+        const joinResponse = await joinRoom({ roomId: invite.roomId, name: username })
+        localStorage.setItem(
+          'realtime-chess-session',
+          JSON.stringify({ roomId: invite.roomId, session: joinResponse.session })
+        )
+        setBannerMessage(`دعوت بازی ${invite.fromUsername} را قبول کردی.`)
+        router.push(`/online?room=${invite.roomId}`)
+      } else {
+        setBannerMessage(`دعوت بازی ${invite.fromUsername} رد شد.`)
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'خطا در پاسخ به دعوت بازی.'
+      setBannerMessage(message)
+    } finally {
+      setIsInviteActionLoading(false)
+    }
   }
 
   const handleBackToHomeMenu = () => {
@@ -1536,11 +1758,15 @@ export function HomeShell() {
               onOpenFriendPlay={handleOpenFriendPlay}
               onStartBotGame={handleStartBotGame}
               onStartPersonalGame={handleStartPersonalGame}
+              onOpenInviteModal={handleOpenInviteModal}
+              onRespondGameInvite={handleRespondGameInvite}
               onBackToMenu={handleBackToHomeMenu}
               onToggleTimeControlOptions={handleToggleTimeControlOptions}
               onSelectTimeControl={handleSelectTimeControl}
               homePanel={homePanel}
               friendPresence={friendPresence}
+              incomingGameInvites={incomingGameInvites}
+              isInviteActionLoading={isInviteActionLoading}
               selectedTimeControlLabel={selectedTimeControlLabel}
               isTimeControlOptionsOpen={isTimeControlOptionsOpen}
               timeControlOptions={ONLINE_TIME_CONTROL_OPTIONS}
@@ -1606,6 +1832,51 @@ export function HomeShell() {
           {activeTab === 'puzzle' ? <PlaceholderContent title="پازل" /> : null}
           {activeTab === 'news' ? (
             <NewsContent activeSection={activeNewsSection} onSectionChange={setActiveNewsSection} />
+          ) : null}
+
+          {isInviteModalOpen ? (
+            <section
+              className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/70 px-4"
+              data-testid="friend-invite-modal"
+            >
+              <div className="w-full max-w-sm space-y-4 rounded-2xl border border-slate-700 bg-slate-900 p-4 shadow-xl">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-bold text-slate-100">دعوت به بازی با {selectedInviteFriendUsername}</h3>
+                  <button
+                    type="button"
+                    onClick={handleCloseInviteModal}
+                    data-testid="friend-invite-close-btn"
+                    className="rounded-md border border-slate-600 px-2 py-1 text-xs text-slate-200 transition hover:bg-slate-800"
+                  >
+                    بستن
+                  </button>
+                </div>
+                <label className="block space-y-2">
+                  <span className="text-xs text-slate-400">زمان بازی</span>
+                  <select
+                    value={selectedInviteTimeControlId}
+                    onChange={(event) => handleSelectInviteTimeControl(event.target.value)}
+                    data-testid="friend-invite-time-select"
+                    className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none ring-cyan-400 transition focus:ring-2"
+                  >
+                    {FRIEND_INVITE_TIME_OPTIONS.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  onClick={handleSendGameInvite}
+                  disabled={isInviteActionLoading}
+                  data-testid="friend-invite-send-btn"
+                  className="w-full rounded-lg bg-cyan-400 px-4 py-2 text-sm font-bold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isInviteActionLoading ? 'در حال ارسال...' : 'ارسال درخواست بازی'}
+                </button>
+              </div>
+            </section>
           ) : null}
         </div>
       </div>

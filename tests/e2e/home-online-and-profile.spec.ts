@@ -228,6 +228,101 @@ test.describe('Home actions and profile registration', () => {
     await secondContext.close()
   })
 
+  test('friend play sends invite with selected time and starts both players equal', async ({ page, context }) => {
+    const seed = Date.now()
+    const userA = `invite-a-${seed}`
+    const userB = `invite-b-${seed}`
+    const password = 'secret123'
+
+    const registerUser = async (targetPage: import('@playwright/test').Page, username: string) => {
+      await targetPage.goto('/')
+      await targetPage.evaluate(() => localStorage.clear())
+      await targetPage.reload()
+      await targetPage.getByTestId('footer-tab-profile').click()
+      await targetPage.getByTestId('profile-mode-register').click()
+      await targetPage.getByTestId('profile-name-input').fill(username)
+      await targetPage.getByTestId('profile-password-input').fill(password)
+      await targetPage.getByTestId('profile-confirm-password-input').fill(password)
+      await targetPage.getByTestId('profile-register-btn').click()
+      await expect(targetPage.getByTestId('profile-username-value')).toContainText(username)
+    }
+
+    await registerUser(page, userA)
+    const secondContext = await context.browser()?.newContext()
+    if (!secondContext) {
+      throw new Error('Could not create second browser context')
+    }
+    const secondPage = await secondContext.newPage()
+    await registerUser(secondPage, userB)
+
+    await page.getByTestId('friends-search-input').fill(userB)
+    await expect(page.getByTestId(`friends-send-request-${userB}`)).toBeVisible({ timeout: 10000 })
+    await page.getByTestId(`friends-send-request-${userB}`).click()
+    await expect(secondPage.getByTestId(`friends-incoming-row-${userA}`)).toBeVisible({ timeout: 10000 })
+    await secondPage.getByTestId(`friends-accept-${userA}`).click()
+    await expect(page.getByTestId(`friends-list-row-${userB}`)).toBeVisible({ timeout: 10000 })
+
+    await page.getByTestId('footer-tab-home').click()
+    await secondPage.getByTestId('footer-tab-home').click()
+    await page.getByTestId('friend-play-btn').click()
+    await secondPage.getByTestId('friend-play-btn').click()
+
+    await expect(page.getByTestId(`friend-play-start-${userB}`)).toBeVisible({ timeout: 10000 })
+    await page.getByTestId(`friend-play-start-${userB}`).click()
+    await expect(page.getByTestId('friend-invite-modal')).toBeVisible()
+    await page.getByTestId('friend-invite-time-select').selectOption('10-2')
+    await page.getByTestId('friend-invite-send-btn').click()
+
+    await expect(secondPage.getByTestId(/^friend-play-invite-row-/)).toBeVisible({ timeout: 15000 })
+    const inviteRow = secondPage.getByTestId(/^friend-play-invite-row-/).first()
+    await expect(inviteRow).toContainText('10+2')
+    const inviteId = (await inviteRow.getAttribute('data-testid'))?.replace('friend-play-invite-row-', '')
+    expect(inviteId).toBeTruthy()
+    await secondPage.getByTestId(`friend-play-invite-accept-${inviteId}`).click()
+
+    await expect(page).toHaveURL(/\/online\?room=/, { timeout: 20000 })
+    await expect(secondPage).toHaveURL(/\/online\?room=/, { timeout: 20000 })
+    const roomA = new URL(page.url()).searchParams.get('room')
+    const roomB = new URL(secondPage.url()).searchParams.get('room')
+    expect(roomA).toBeTruthy()
+    expect(roomB).toBeTruthy()
+    expect(roomA).toBe(roomB)
+
+    await expect.poll(async () => {
+      const roomId = roomA ?? ''
+      if (!roomId) {
+        return null
+      }
+      return page.evaluate(async (id) => {
+        const response = await fetch(`/api/chess/rooms/${id}`)
+        const payload = await response.json()
+        return payload.snapshot
+          ? {
+              whiteTimeMs: payload.snapshot.whiteTimeMs,
+              blackTimeMs: payload.snapshot.blackTimeMs,
+              incrementMs: payload.snapshot.incrementMs,
+              timeControlMs: payload.snapshot.timeControlMs,
+              status: payload.snapshot.status,
+            }
+          : null
+      }, roomId)
+    }).toMatchObject({
+      timeControlMs: 600000,
+      incrementMs: 2000,
+    })
+
+    const snapshot = await page.evaluate(async (id) => {
+      const response = await fetch(`/api/chess/rooms/${id}`)
+      const payload = await response.json()
+      return payload.snapshot
+    }, roomA ?? '')
+    expect(snapshot.whiteTimeMs).toBe(600000)
+    expect(snapshot.blackTimeMs).toBe(600000)
+    expect(snapshot.status).toBe('active')
+
+    await secondContext.close()
+  })
+
   test('offline game starts and robot responds to move', async ({ page }) => {
     await page.goto('/')
     await page.getByTestId('offline-play-btn').click()

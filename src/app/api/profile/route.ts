@@ -24,6 +24,8 @@ type ProfileAction =
   | 'friend-respond'
   | 'friend-cancel-request'
   | 'friend-remove'
+  | 'game-invite-send'
+  | 'game-invite-respond'
   | 'notifications'
   | 'mark-notifications-read'
 
@@ -55,6 +57,20 @@ function normalizeAction(action: string): ProfileAction | null {
   }
   if (normalized === 'friend-remove' || normalized === 'friendRemove' || normalized === 'removeFriend') {
     return 'friend-remove'
+  }
+  if (
+    normalized === 'game-invite-send' ||
+    normalized === 'gameInviteSend' ||
+    normalized === 'sendGameInvite'
+  ) {
+    return 'game-invite-send'
+  }
+  if (
+    normalized === 'game-invite-respond' ||
+    normalized === 'gameInviteRespond' ||
+    normalized === 'respondGameInvite'
+  ) {
+    return 'game-invite-respond'
   }
   if (normalized === 'notifications') return 'notifications'
   if (normalized === 'mark-notifications-read' || normalized === 'markNotificationsRead') {
@@ -302,6 +318,39 @@ export async function POST(request: Request): Promise<Response> {
         return persistenceWriteError
       }
       return Response.json({ friend: result }, { status: 200 })
+    }
+
+    if (action === 'game-invite-send') {
+      const result = getUserStore().sendGameInvite({
+        fromUsername: (body.fromUsername as string | undefined) ?? '',
+        toUsername: (body.toUsername as string | undefined) ?? '',
+        roomId: (body.roomId as string | undefined) ?? '',
+        timeControlMinutes: Number(body.timeControlMinutes ?? 0),
+        incrementSeconds: Number(body.incrementSeconds ?? 0),
+      })
+      const persistenceWriteError = await saveStoreToPersistence()
+      if (persistenceWriteError) {
+        return persistenceWriteError
+      }
+      return Response.json({ invite: result }, { status: 200 })
+    }
+
+    if (action === 'game-invite-respond') {
+      const maybeAction = body.action
+      if (maybeAction !== 'accept' && maybeAction !== 'reject') {
+        return badRequest('مقدار action برای پاسخ درخواست بازی نامعتبر است.')
+      }
+
+      const result = getUserStore().respondToGameInvite({
+        username: (body.username as string | undefined) ?? '',
+        inviteId: (body.inviteId as string | undefined) ?? '',
+        action: maybeAction,
+      })
+      const persistenceWriteError = await saveStoreToPersistence()
+      if (persistenceWriteError) {
+        return persistenceWriteError
+      }
+      return Response.json({ response: result }, { status: 200 })
     }
 
     if (action === 'mark-notifications-read') {

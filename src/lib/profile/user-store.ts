@@ -7,6 +7,21 @@ type NotificationType =
   | 'friend_request_rejected'
   | 'friend_request_canceled'
   | 'friend_removed'
+  | 'game_invite_received'
+  | 'game_invite_accepted'
+  | 'game_invite_rejected'
+
+type GameInviteStatus = 'pending'
+
+interface GameInvite {
+  id: string
+  from: string
+  roomId: string
+  timeControlMinutes: number
+  incrementSeconds: number
+  createdAt: number
+  status: GameInviteStatus
+}
 
 interface ProfileNotification {
   id: string
@@ -24,6 +39,7 @@ interface RegisteredUser {
   friends: string[]
   incomingRequests: string[]
   outgoingRequests: string[]
+  incomingGameInvites: GameInvite[]
   notifications: ProfileNotification[]
 }
 
@@ -39,6 +55,15 @@ interface NotificationView {
 interface FriendPresenceView {
   username: string
   online: boolean
+}
+
+interface GameInviteView {
+  id: string
+  fromUsername: string
+  roomId: string
+  timeControlMinutes: number
+  incrementSeconds: number
+  createdAt: number
 }
 
 const ONLINE_WINDOW_MS = 35_000
@@ -80,6 +105,17 @@ class UserStore {
       friends: [...user.friends],
       incomingRequests: [...user.incomingRequests],
       outgoingRequests: [...user.outgoingRequests],
+      incomingGameInvites: Array.isArray(user.incomingGameInvites)
+        ? user.incomingGameInvites.map((invite) => ({
+            id: invite.id,
+            from: invite.from,
+            roomId: invite.roomId,
+            timeControlMinutes: invite.timeControlMinutes,
+            incrementSeconds: invite.incrementSeconds,
+            createdAt: invite.createdAt,
+            status: invite.status,
+          }))
+        : [],
       notifications: this.cloneNotifications(user.notifications),
     }
   }
@@ -137,6 +173,9 @@ class UserStore {
     }
     if (!Array.isArray(user.outgoingRequests)) {
       user.outgoingRequests = []
+    }
+    if (!Array.isArray(user.incomingGameInvites)) {
+      user.incomingGameInvites = []
     }
     if (!Array.isArray(user.notifications)) {
       user.notifications = []
@@ -228,6 +267,27 @@ class UserStore {
     return friendPresence
   }
 
+  private toDisplayGameInvites(invites: GameInvite[]): GameInviteView[] {
+    return invites
+      .filter((invite) => invite.status === 'pending')
+      .map((invite) => {
+        const fromUsername = this.getDisplayUsername(invite.from)
+        if (!fromUsername) {
+          return null
+        }
+        return {
+          id: invite.id,
+          fromUsername,
+          roomId: invite.roomId,
+          timeControlMinutes: invite.timeControlMinutes,
+          incrementSeconds: invite.incrementSeconds,
+          createdAt: invite.createdAt,
+        }
+      })
+      .filter((invite): invite is GameInviteView => Boolean(invite))
+      .sort((left, right) => right.createdAt - left.createdAt)
+  }
+
   private addNotification(target: RegisteredUser, type: NotificationType, actor: string): void {
     this.ensureSocialState(target)
     target.notifications.unshift({
@@ -255,6 +315,15 @@ class UserStore {
     }
     if (type === 'friend_request_canceled') {
       return `${actorUsername} درخواست دوستی ارسال‌شده را لغو کرد.`
+    }
+    if (type === 'game_invite_received') {
+      return `${actorUsername} برای شما درخواست بازی فرستاد.`
+    }
+    if (type === 'game_invite_accepted') {
+      return `${actorUsername} دعوت بازی شما را قبول کرد.`
+    }
+    if (type === 'game_invite_rejected') {
+      return `${actorUsername} دعوت بازی شما را رد کرد.`
     }
     return `${actorUsername} شما را از لیست دوستان حذف کرد.`
   }
@@ -300,6 +369,7 @@ class UserStore {
       friends: [],
       incomingRequests: [],
       outgoingRequests: [],
+      incomingGameInvites: [],
       notifications: [],
     })
 
@@ -419,6 +489,7 @@ class UserStore {
     friendPresence: FriendPresenceView[]
     incomingRequests: string[]
     outgoingRequests: string[]
+    incomingGameInvites: GameInviteView[]
     incomingCount: number
   } {
     const normalized = this.normalizeUsername(input.username)
@@ -432,6 +503,7 @@ class UserStore {
     const friendPresence = this.toDisplayFriendPresence(user.friends)
     const incomingRequests = this.toDisplayUsernames(user.incomingRequests)
     const outgoingRequests = this.toDisplayUsernames(user.outgoingRequests)
+    const incomingGameInvites = this.toDisplayGameInvites(user.incomingGameInvites)
 
     return {
       username: user.username,
@@ -439,6 +511,7 @@ class UserStore {
       friendPresence,
       incomingRequests,
       outgoingRequests,
+      incomingGameInvites,
       incomingCount: incomingRequests.length,
     }
   }
@@ -652,6 +725,101 @@ class UserStore {
 
     const unreadCount = user.notifications.filter((notification) => !notification.read).length
     return { unreadCount }
+  }
+
+  sendGameInvite(input: {
+    fromUsername: string
+    toUsername: string
+    roomId: string
+    timeControlMinutes: number
+    incrementSeconds: number
+  }): { toUsername: string; inviteId: string } {
+    const fromNormalized = this.normalizeUsername(input.fromUsername)
+    const toNormalized = this.normalizeUsername(input.toUsername)
+    const roomId = input.roomId.trim().toUpperCase()
+    const timeControlMinutes = Math.floor(input.timeControlMinutes)
+    const incrementSeconds = Math.floor(input.incrementSeconds)
+
+    if (!fromNormalized || !toNormalized) {
+      throw new ProfileApiError(400, 'INVALID_USERNAME', 'نام کاربری فرستنده و گیرنده الزامی است.')
+    }
+    if (fromNormalized === toNormalized) {
+      throw new ProfileApiError(400, 'INVALID_REQUEST', 'ارسال درخواست بازی برای خودتان ممکن نیست.')
+    }
+    if (roomId.length < 4) {
+      throw new ProfileApiError(400, 'INVALID_ROOM_ID', 'کد اتاق بازی نامعتبر است.')
+    }
+    if (!Number.isFinite(timeControlMinutes) || timeControlMinutes < 1 || timeControlMinutes > 60) {
+      throw new ProfileApiError(400, 'INVALID_TIME_CONTROL', 'زمان بازی باید بین ۱ تا ۶۰ دقیقه باشد.')
+    }
+    if (!Number.isFinite(incrementSeconds) || incrementSeconds < 0 || incrementSeconds > 30) {
+      throw new ProfileApiError(400, 'INVALID_INCREMENT', 'اینکریمنت باید بین ۰ تا ۳۰ ثانیه باشد.')
+    }
+
+    const fromUser = this.getUserByNormalizedUsername(fromNormalized)
+    const toUser = this.getUserByNormalizedUsername(toNormalized)
+    this.markUserActive(fromUser)
+
+    if (!fromUser.friends.includes(toNormalized)) {
+      throw new ProfileApiError(403, 'FRIEND_REQUIRED', 'فقط می‌توانید برای دوستانتان درخواست بازی بفرستید.')
+    }
+
+    const now = Date.now()
+    if (toUser.lastActiveAt === null || now - toUser.lastActiveAt > ONLINE_WINDOW_MS) {
+      throw new ProfileApiError(409, 'TARGET_OFFLINE', 'این دوست در حال حاضر آنلاین نیست.')
+    }
+
+    toUser.incomingGameInvites = toUser.incomingGameInvites.filter(
+      (invite) => !(invite.from === fromNormalized && invite.status === 'pending')
+    )
+
+    const invite: GameInvite = {
+      id: this.generateNotificationId(),
+      from: fromNormalized,
+      roomId,
+      timeControlMinutes,
+      incrementSeconds,
+      createdAt: Date.now(),
+      status: 'pending',
+    }
+    toUser.incomingGameInvites.unshift(invite)
+    if (toUser.incomingGameInvites.length > 50) {
+      toUser.incomingGameInvites = toUser.incomingGameInvites.slice(0, 50)
+    }
+    this.addNotification(toUser, 'game_invite_received', fromNormalized)
+
+    return { toUsername: toUser.username, inviteId: invite.id }
+  }
+
+  respondToGameInvite(input: {
+    username: string
+    inviteId: string
+    action: 'accept' | 'reject'
+  }): { inviteId: string; action: 'accept' | 'reject' } {
+    const normalized = this.normalizeUsername(input.username)
+    const inviteId = input.inviteId.trim()
+    const action = input.action
+
+    if (!normalized || !inviteId) {
+      throw new ProfileApiError(400, 'INVALID_REQUEST', 'اطلاعات پاسخ درخواست بازی ناقص است.')
+    }
+    if (action !== 'accept' && action !== 'reject') {
+      throw new ProfileApiError(400, 'INVALID_ACTION', 'عملیات درخواست بازی نامعتبر است.')
+    }
+
+    const user = this.getUserByNormalizedUsername(normalized)
+    this.markUserActive(user)
+    const inviteIndex = user.incomingGameInvites.findIndex((invite) => invite.id === inviteId && invite.status === 'pending')
+    if (inviteIndex < 0) {
+      throw new ProfileApiError(404, 'GAME_INVITE_NOT_FOUND', 'درخواست بازی پیدا نشد یا قبلا پاسخ داده شده است.')
+    }
+
+    const invite = user.incomingGameInvites[inviteIndex]
+    user.incomingGameInvites.splice(inviteIndex, 1)
+    const inviter = this.getUserByNormalizedUsername(invite.from, 'فرستنده درخواست بازی پیدا نشد.')
+    this.addNotification(inviter, action === 'accept' ? 'game_invite_accepted' : 'game_invite_rejected', normalized)
+
+    return { inviteId, action }
   }
 
 }
